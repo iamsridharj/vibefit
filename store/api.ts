@@ -1,30 +1,36 @@
 import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
-import { RootState } from "./index";
+import { RootState } from ".";
+import config from "../config/environment";
 import type {
+  ApiResponse,
+  AuthResponse,
+  RegisterRequest,
   User,
   WorkoutPlan,
   WorkoutSession,
   Exercise,
-  BodyMetric,
+  BodyMetrics,
   AIInsight,
-  ApiResponse,
-  AuthResponse,
-  LoginForm,
-  RegisterForm,
   LLMConversation,
-  ExerciseSet,
-} from "../types";
+  WeeklyStats,
+  CreateWorkoutSessionRequest,
+  ProgressAnalytics,
+  WorkoutPlanRequest,
+  TodaysWorkout,
+  SocialActivity,
+} from "../types/api";
 
-const API_BASE_URL = __DEV__
-  ? "http://localhost:3000/api/v1"
-  : "https://api.vibefit.com/api/v1";
+// Define the set details type
+type SetDetails = NonNullable<
+  WorkoutSession["exercises"][number]["setDetails"]
+>[number];
 
 export const api = createApi({
   reducerPath: "api",
   baseQuery: fetchBaseQuery({
-    baseUrl: API_BASE_URL,
+    baseUrl: `${config.apiUrl}/api/v1`,
     prepareHeaders: (headers, { getState }) => {
-      const token = (getState() as RootState).auth.token;
+      const token = (getState() as RootState).persisted.auth.token;
       if (token) {
         headers.set("authorization", `Bearer ${token}`);
       }
@@ -37,14 +43,20 @@ export const api = createApi({
     "WorkoutPlan",
     "WorkoutSession",
     "Exercise",
-    "BodyMetric",
+    "BodyMetrics",
     "AIInsight",
-    "Conversation",
+    "LLMConversation",
+    "WorkoutPlans",
+    "Exercises",
     "Progress",
+    "Social",
   ],
   endpoints: (builder) => ({
     // Authentication endpoints
-    login: builder.mutation<ApiResponse<AuthResponse>, LoginForm>({
+    login: builder.mutation<
+      ApiResponse<AuthResponse>,
+      { email: string; password: string }
+    >({
       query: (credentials) => ({
         url: "/auth/login",
         method: "POST",
@@ -53,7 +65,7 @@ export const api = createApi({
       invalidatesTags: ["User"],
     }),
 
-    register: builder.mutation<ApiResponse<AuthResponse>, RegisterForm>({
+    register: builder.mutation<ApiResponse<AuthResponse>, RegisterRequest>({
       query: (userData) => ({
         url: "/auth/register",
         method: "POST",
@@ -97,7 +109,11 @@ export const api = createApi({
     // Workout endpoints
     getWorkoutPlans: builder.query<ApiResponse<WorkoutPlan[]>, void>({
       query: () => "/workouts/plans",
-      providesTags: ["WorkoutPlan"],
+      providesTags: ["WorkoutPlans"],
+    }),
+
+    getActivePlan: builder.query<{ data: { activePlan: WorkoutPlan } }, void>({
+      query: () => "/workouts/plans/active",
     }),
 
     getWorkoutPlan: builder.query<ApiResponse<WorkoutPlan>, string>({
@@ -107,18 +123,20 @@ export const api = createApi({
       ],
     }),
 
-    generateWorkoutPlan: builder.mutation<ApiResponse<WorkoutPlan>, any>({
-      query: (planData) => ({
-        url: "/llm/generate-plan",
+    generateWorkoutPlan: builder.mutation<
+      ApiResponse<WorkoutPlan>,
+      WorkoutPlanRequest
+    >({
+      query: (request) => ({
+        url: "/workouts/plans/generate",
         method: "POST",
-        body: planData,
+        body: request,
       }),
-      invalidatesTags: ["WorkoutPlan"],
+      invalidatesTags: ["WorkoutPlans"],
     }),
 
-    getTodaysWorkout: builder.query<ApiResponse<WorkoutSession>, void>({
+    getTodaysWorkout: builder.query<{ data: TodaysWorkout }, void>({
       query: () => "/workouts/today",
-      providesTags: ["WorkoutSession"],
     }),
 
     startWorkoutSession: builder.mutation<
@@ -134,8 +152,8 @@ export const api = createApi({
     }),
 
     logExerciseSet: builder.mutation<
-      ApiResponse<ExerciseSet>,
-      { sessionId: string; setData: Partial<ExerciseSet> }
+      ApiResponse<SetDetails>,
+      { sessionId: string; setData: Partial<SetDetails> }
     >({
       query: ({ sessionId, setData }) => ({
         url: `/workouts/sessions/${sessionId}/sets`,
@@ -147,14 +165,18 @@ export const api = createApi({
 
     completeWorkoutSession: builder.mutation<
       ApiResponse<WorkoutSession>,
-      { sessionId: string; sessionData: any }
+      {
+        id: string;
+        endTime: string;
+        duration: number;
+      }
     >({
-      query: ({ sessionId, sessionData }) => ({
-        url: `/workouts/sessions/${sessionId}/complete`,
+      query: ({ id, ...body }) => ({
+        url: `/workouts/sessions/${id}/complete`,
         method: "POST",
-        body: sessionData,
+        body,
       }),
-      invalidatesTags: ["WorkoutSession", "Progress"],
+      invalidatesTags: ["WorkoutSession", "WorkoutPlan"],
     }),
 
     getWorkoutHistory: builder.query<
@@ -166,18 +188,78 @@ export const api = createApi({
       providesTags: ["WorkoutSession"],
     }),
 
+    createWorkoutSession: builder.mutation<
+      ApiResponse<WorkoutSession>,
+      CreateWorkoutSessionRequest
+    >({
+      query: (body) => ({
+        url: "/workouts/sessions",
+        method: "POST",
+        body,
+      }),
+      invalidatesTags: ["WorkoutSession"],
+    }),
+
+    getWorkoutSession: builder.query<ApiResponse<WorkoutSession>, string>({
+      query: (id) => `/workouts/sessions/${id}`,
+      providesTags: ["WorkoutSession"],
+    }),
+
+    updateWorkoutSession: builder.mutation<
+      ApiResponse<WorkoutSession>,
+      {
+        id: string;
+        status?: "not_started" | "in_progress" | "completed" | "cancelled";
+        startTime?: string;
+        endTime?: string;
+        duration?: number;
+        exercises?: Array<{
+          id: string;
+          exerciseId: string;
+          name: string;
+          sets: number;
+          reps: string;
+          rest: string;
+          notes?: string;
+          order: number;
+          completed?: boolean;
+          setDetails?: Array<{
+            setNumber: number;
+            weight?: number;
+            reps: number;
+            rpe?: number;
+            completed: boolean;
+            timestamp: string;
+          }>;
+        }>;
+      }
+    >({
+      query: ({ id, ...body }) => ({
+        url: `/workouts/sessions/${id}`,
+        method: "PUT",
+        body,
+      }),
+      invalidatesTags: ["WorkoutSession"],
+    }),
+
     // Exercise endpoints
     getExercises: builder.query<
       ApiResponse<Exercise[]>,
-      { category?: string; muscleGroup?: string }
+      {
+        category?: string;
+        muscleGroups?: string[];
+        equipment?: string[];
+        difficultyLevel?: number;
+        movementPattern?: string;
+        page?: number;
+        limit?: number;
+      }
     >({
-      query: ({ category, muscleGroup } = {}) => {
-        const params = new URLSearchParams();
-        if (category) params.append("category", category);
-        if (muscleGroup) params.append("muscleGroup", muscleGroup);
-        return `/exercises?${params.toString()}`;
-      },
-      providesTags: ["Exercise"],
+      query: (params) => ({
+        url: "/exercises",
+        params,
+      }),
+      providesTags: ["Exercises"],
     }),
 
     getExercise: builder.query<ApiResponse<Exercise>, string>({
@@ -188,41 +270,149 @@ export const api = createApi({
     }),
 
     // Progress endpoints
-    getBodyMetrics: builder.query<
-      ApiResponse<BodyMetric[]>,
-      { startDate?: string; endDate?: string }
+    getProgressAnalytics: builder.query<
+      ApiResponse<{
+        analytics: {
+          weight: {
+            current: number;
+            change: number;
+            trend: "up" | "down" | "stable";
+          };
+          bodyComposition: {
+            fatPercentage: {
+              current: number;
+              change: number;
+            };
+            muscleMass: {
+              current: number;
+              change: number;
+            };
+          };
+          measurements: {
+            waist: {
+              current: number;
+              change: number;
+            };
+          };
+          trends: {
+            weightTrend: Array<{
+              date: string;
+              value: number;
+            }>;
+          };
+        };
+      }>,
+      { timeframe: number }
     >({
-      query: ({ startDate, endDate } = {}) => {
-        const params = new URLSearchParams();
-        if (startDate) params.append("startDate", startDate);
-        if (endDate) params.append("endDate", endDate);
-        return `/progress/metrics?${params.toString()}`;
-      },
-      providesTags: ["BodyMetric"],
+      query: ({ timeframe }) => ({
+        url: "/progress/analytics",
+        params: { timeframe },
+      }),
+      providesTags: ["Progress"],
+    }),
+
+    getBodyMetrics: builder.query<
+      ApiResponse<{
+        metrics: Array<{
+          id: string;
+          userId: string;
+          weightKg: number;
+          bodyFatPercentage: number;
+          muscleMassKg: number;
+          waterPercentage: number;
+          measurements: {
+            waistCm: number;
+            chestCm: number;
+            armCm: number;
+            thighCm: number;
+            neckCm: number;
+            hipCm: number;
+          };
+          measurementMethod: "scale" | "calipers" | "dexa" | "manual";
+          notes?: string;
+          createdAt: string;
+        }>;
+      }>,
+      { startDate: string; endDate: string }
+    >({
+      query: ({ startDate, endDate }) => ({
+        url: "/progress/metrics",
+        params: { startDate, endDate },
+      }),
+      providesTags: ["Progress"],
+    }),
+
+    getProgressComparison: builder.query<
+      ApiResponse<{
+        comparison: {
+          period1: {
+            startDate: string;
+            endDate: string;
+            metrics: {
+              weight: {
+                average: number;
+                min: number;
+                max: number;
+              };
+              bodyFat: {
+                average: number;
+                change: number;
+              };
+            };
+          };
+          period2: {
+            startDate: string;
+            endDate: string;
+            metrics: {
+              weight: {
+                average: number;
+                min: number;
+                max: number;
+              };
+              bodyFat: {
+                average: number;
+                change: number;
+              };
+            };
+          };
+          differences: {
+            weight: number;
+            bodyFat: number;
+            muscleMass: number;
+          };
+        };
+      }>,
+      { period1: number; period2: number }
+    >({
+      query: ({ period1, period2 }) => ({
+        url: "/progress/comparison",
+        params: { period1, period2 },
+      }),
+      providesTags: ["Progress"],
     }),
 
     addBodyMetric: builder.mutation<
-      ApiResponse<BodyMetric>,
-      Partial<BodyMetric>
+      ApiResponse<BodyMetrics>,
+      Partial<BodyMetrics>
     >({
       query: (metric) => ({
         url: "/progress/metrics",
         method: "POST",
         body: metric,
       }),
-      invalidatesTags: ["BodyMetric", "Progress"],
+      invalidatesTags: ["BodyMetrics", "Progress"],
     }),
 
     updateBodyMetric: builder.mutation<
-      ApiResponse<BodyMetric>,
-      { id: string; updates: Partial<BodyMetric> }
+      ApiResponse<BodyMetrics>,
+      { id: string; updates: Partial<BodyMetrics> }
     >({
       query: ({ id, updates }) => ({
         url: `/progress/metrics/${id}`,
         method: "PUT",
         body: updates,
       }),
-      invalidatesTags: ["BodyMetric", "Progress"],
+      invalidatesTags: ["BodyMetrics", "Progress"],
     }),
 
     deleteBodyMetric: builder.mutation<ApiResponse<void>, string>({
@@ -230,7 +420,7 @@ export const api = createApi({
         url: `/progress/metrics/${id}`,
         method: "DELETE",
       }),
-      invalidatesTags: ["BodyMetric", "Progress"],
+      invalidatesTags: ["BodyMetrics", "Progress"],
     }),
 
     getProgressStats: builder.query<ApiResponse<any>, { timeframe?: string }>({
@@ -269,18 +459,18 @@ export const api = createApi({
         method: "POST",
         body: data,
       }),
-      invalidatesTags: ["Conversation"],
+      invalidatesTags: ["LLMConversation"],
     }),
 
     getConversations: builder.query<ApiResponse<LLMConversation[]>, void>({
       query: () => "/llm/conversations",
-      providesTags: ["Conversation"],
+      providesTags: ["LLMConversation"],
     }),
 
     getConversation: builder.query<ApiResponse<LLMConversation>, string>({
       query: (conversationId) => `/llm/conversations/${conversationId}`,
       providesTags: (result, error, conversationId) => [
-        { type: "Conversation", id: conversationId },
+        { type: "LLMConversation", id: conversationId },
       ],
     }),
 
@@ -316,6 +506,22 @@ export const api = createApi({
       query: ({ page = 1, limit = 20 } = {}) =>
         `/social/feed?page=${page}&limit=${limit}`,
     }),
+
+    getWeeklyStats: builder.query<{ data: { weeklyStats: WeeklyStats } }, void>(
+      {
+        query: () => "/workouts/stats/weekly",
+      }
+    ),
+
+    getSocialFeed: builder.query<
+      { data: { activities: SocialActivity[] } },
+      { limit?: number }
+    >({
+      query: (params) => ({
+        url: "/social/feed",
+        params,
+      }),
+    }),
   }),
 });
 
@@ -333,20 +539,26 @@ export const {
 
   // Workouts
   useGetWorkoutPlansQuery,
+  useGetActivePlanQuery,
   useGetWorkoutPlanQuery,
   useGenerateWorkoutPlanMutation,
   useGetTodaysWorkoutQuery,
   useStartWorkoutSessionMutation,
   useLogExerciseSetMutation,
-  useCompleteWorkoutSessionMutation,
   useGetWorkoutHistoryQuery,
+  useCreateWorkoutSessionMutation,
+  useGetWorkoutSessionQuery,
+  useUpdateWorkoutSessionMutation,
+  useCompleteWorkoutSessionMutation,
 
   // Exercises
   useGetExercisesQuery,
   useGetExerciseQuery,
 
   // Progress
+  useGetProgressAnalyticsQuery,
   useGetBodyMetricsQuery,
+  useGetProgressComparisonQuery,
   useAddBodyMetricMutation,
   useUpdateBodyMetricMutation,
   useDeleteBodyMetricMutation,
@@ -364,4 +576,7 @@ export const {
   useSendFriendRequestMutation,
   useAcceptFriendRequestMutation,
   useGetFeedQuery,
+
+  useGetWeeklyStatsQuery,
+  useGetSocialFeedQuery,
 } = api;

@@ -1,6 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import NetInfo from "@react-native-community/netinfo";
 import config from "../../config/environment";
+import { NetworkMonitor, logger } from "../../utils/debugger";
 import {
   ApiResponse,
   ApiError,
@@ -17,7 +18,6 @@ import {
 export class ApiClient {
   private baseURL: string;
   private accessToken: string | null = null;
-  private refreshToken: string | null = null;
   private isRefreshing = false;
   private cache = new Map<string, CachedResponse<any>>();
   private offlineQueue: Array<{
@@ -28,19 +28,20 @@ export class ApiClient {
   }> = [];
 
   constructor() {
-    this.baseURL = config.apiUrl;
+    this.baseURL = `${config.apiUrl}/api/v1`;
     this.loadTokensFromStorage();
     this.setupNetworkListener();
+    this.setupRequestInterceptor();
   }
 
   private async loadTokensFromStorage() {
     try {
-      const accessToken = await AsyncStorage.getItem("access_token");
-      const refreshToken = await AsyncStorage.getItem("refresh_token");
-      this.accessToken = accessToken;
-      this.refreshToken = refreshToken;
+      const token = await AsyncStorage.getItem("accessToken");
+      if (token) {
+        this.accessToken = token;
+      }
     } catch (error) {
-      console.warn("Failed to load tokens from storage:", error);
+      logger.error("Failed to load tokens from storage", error);
     }
   }
 
@@ -52,96 +53,50 @@ export class ApiClient {
     });
   }
 
-  public setTokens(accessToken: string, refreshToken: string) {
-    this.accessToken = accessToken;
-    this.refreshToken = refreshToken;
-    AsyncStorage.setItem("access_token", accessToken);
-    AsyncStorage.setItem("refresh_token", refreshToken);
-  }
+  private setupRequestInterceptor() {
+    NetworkMonitor.addRequestInterceptor(async (config) => {
+      const requestId = Math.random().toString(36).substring(7);
+      const timestamp = new Date().toISOString();
 
-  public clearTokens() {
-    this.accessToken = null;
-    this.refreshToken = null;
-    AsyncStorage.removeItem("access_token");
-    AsyncStorage.removeItem("refresh_token");
-  }
-
-  private getAuthHeaders(): Record<string, string> {
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-    };
-
-    if (this.accessToken) {
-      headers["Authorization"] = `Bearer ${this.accessToken}`;
-    }
-
-    return headers;
-  }
-
-  private getCacheKey(url: string, method: ApiMethod, body?: any): string {
-    const bodyHash = body ? JSON.stringify(body) : "";
-    return `${method}:${url}:${bodyHash}`;
-  }
-
-  private getFromCache<T>(cacheKey: string): T | null {
-    const cached = this.cache.get(cacheKey);
-    if (cached && Date.now() - cached.timestamp < cached.ttl) {
-      return cached.data;
-    }
-    this.cache.delete(cacheKey);
-    return null;
-  }
-
-  private setCache<T>(cacheKey: string, data: T, ttl: number) {
-    this.cache.set(cacheKey, {
-      data,
-      timestamp: Date.now(),
-      ttl,
+      return {
+        ...config,
+        headers: {
+          ...config.headers,
+          "X-Request-ID": requestId,
+          "X-Client-Timestamp": timestamp,
+          "X-Client-Version": config.appVersion || "1.0.0",
+        },
+      };
     });
   }
 
-  private async refreshAccessToken(): Promise<string> {
-    if (this.isRefreshing) {
-      // Wait for the current refresh to complete
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      return this.refreshAccessToken();
-    }
+  private async processOfflineQueue() {
+    const queue = [...this.offlineQueue];
+    this.offlineQueue = [];
 
-    if (!this.refreshToken) {
-      throw new AuthenticationError("No refresh token available");
-    }
-
-    this.isRefreshing = true;
-
-    try {
-      const response = await fetch(`${this.baseURL}/api/v1/auth/refresh`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: this.refreshToken }),
-      });
-
-      if (!response.ok) {
-        throw new AuthenticationError("Token refresh failed");
+    for (const request of queue) {
+      try {
+        const response = await this.request(request.url, request.config);
+        request.resolve(response);
+      } catch (error) {
+        request.reject(error);
       }
-
-      const data = await response.json();
-      const newAccessToken = data.data.tokens.accessToken;
-
-      this.setTokens(newAccessToken, this.refreshToken!);
-      return newAccessToken;
-    } finally {
-      this.isRefreshing = false;
     }
   }
 
   private async handleApiError(response: Response): Promise<never> {
-    let errorData: any;
+    let errorData: ApiError;
 
     try {
       errorData = await response.json();
     } catch {
       errorData = {
-        error: { code: "UNKNOWN_ERROR", message: `HTTP ${response.status}` },
+        success: false,
+        error: {
+          code: "UNKNOWN_ERROR",
+          message: `HTTP ${response.status}`,
+          requestId: response.headers.get("X-Request-ID") || "unknown",
+        },
       };
     }
 
@@ -149,114 +104,56 @@ export class ApiClient {
 
     switch (response.status) {
       case 401:
-        throw new AuthenticationError(error.message || "Authentication failed");
+        if (this.accessToken && !this.isRefreshing) {
+          await this.refreshToken();
+          throw new AuthenticationError(error.message, true);
+        }
+        throw new AuthenticationError(error.message);
       case 403:
-        throw new ApiErrorType(
-          "AUTHORIZATION_ERROR",
-          error.message || "Access denied"
-        );
+        throw new ApiErrorType("FORBIDDEN", error.message);
       case 422:
-        throw new ValidationError(
-          error.message || "Validation failed",
-          error.details
-        );
+        throw new ValidationError(error.message, error.details);
       case 429:
-        throw new RateLimitError(error.message || "Rate limit exceeded");
+        const retryAfter = response.headers.get("Retry-After");
+        throw new RateLimitError(error.message, parseInt(retryAfter || "60"));
+      case 404:
+        throw new ApiErrorType("NOT_FOUND", error.message);
       case 500:
       case 502:
       case 503:
       case 504:
-        throw new ApiErrorType("SERVER_ERROR", error.message || "Server error");
+        throw new ApiErrorType("SERVER_ERROR", error.message, error.requestId);
       default:
         throw new ApiErrorType(
           error.code || "API_ERROR",
-          error.message || "Request failed"
+          error.message,
+          error.requestId
         );
     }
   }
 
-  private async retryWithBackoff<T>(
-    operation: () => Promise<T>,
-    maxRetries: number = config.retryConfig.maxRetries,
-    baseDelay: number = config.retryConfig.baseDelay
-  ): Promise<T> {
-    let lastError: Error;
-
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        return await operation();
-      } catch (error) {
-        lastError = error as Error;
-
-        if (error instanceof RateLimitError && attempt < maxRetries) {
-          const delay = Math.min(
-            baseDelay * Math.pow(2, attempt) + Math.random() * 1000,
-            config.retryConfig.maxDelay
-          );
-
-          if (config.enableLogging) {
-            console.log(
-              `Retrying request in ${delay}ms (attempt ${
-                attempt + 1
-              }/${maxRetries})`
-            );
-          }
-
-          await new Promise((resolve) => setTimeout(resolve, delay));
-          continue;
-        }
-
-        // Don't retry non-retryable errors
-        if (
-          error instanceof AuthenticationError ||
-          error instanceof ValidationError ||
-          (error instanceof NetworkError && attempt >= maxRetries)
-        ) {
-          throw error;
-        }
-
-        if (attempt === maxRetries) {
-          throw error;
-        }
-
-        // Regular retry with exponential backoff
-        const delay = Math.min(
-          baseDelay * Math.pow(2, attempt),
-          config.retryConfig.maxDelay
-        );
-        await new Promise((resolve) => setTimeout(resolve, delay));
-      }
-    }
-
-    throw lastError!;
+  private getCacheKey(url: string, method: ApiMethod, body?: any): string {
+    return `${method}:${url}${body ? `:${JSON.stringify(body)}` : ""}`;
   }
 
-  private async processOfflineQueue() {
-    if (config.enableLogging) {
-      console.log(`Processing ${this.offlineQueue.length} offline requests`);
+  private getFromCache<T>(key: string): T | null {
+    const cached = this.cache.get(key);
+    if (!cached) return null;
+
+    if (Date.now() - cached.timestamp > cached.ttl) {
+      this.cache.delete(key);
+      return null;
     }
 
-    const queue = [...this.offlineQueue];
-    this.offlineQueue = [];
+    return cached.data;
+  }
 
-    for (const { url, config: requestConfig, resolve, reject } of queue) {
-      try {
-        const result = await this.request(url, requestConfig);
-        resolve(result);
-      } catch (error) {
-        if (error instanceof NetworkError) {
-          // Re-queue if still offline
-          this.offlineQueue.push({
-            url,
-            config: requestConfig,
-            resolve,
-            reject,
-          });
-        } else {
-          reject(error);
-        }
-      }
-    }
+  private setCache<T>(key: string, data: T, ttl: number) {
+    this.cache.set(key, {
+      data,
+      timestamp: Date.now(),
+      ttl,
+    });
   }
 
   public async request<T>(
@@ -265,10 +162,11 @@ export class ApiClient {
   ): Promise<ApiResponse<T>> {
     const {
       method = "GET",
-      timeout = 10000,
-      retries = config.retries || 0,
+      timeout = 30000,
+      retries = 3,
       enableCache = false,
-      cacheTTL = config.cacheTTL || 300000,
+      cacheTTL = 300000,
+      headers = {},
       ...fetchConfig
     } = config;
 
@@ -281,7 +179,6 @@ export class ApiClient {
       fetchConfig.body
     );
 
-    // Check cache for GET requests
     if (enableCache && method === "GET") {
       const cached = this.getFromCache<ApiResponse<T>>(cacheKey);
       if (cached) {
@@ -289,72 +186,78 @@ export class ApiClient {
       }
     }
 
-    // Check network connectivity
     const netInfo = await NetInfo.fetch();
     if (!netInfo.isConnected) {
       return new Promise((resolve, reject) => {
         this.offlineQueue.push({ url, config, resolve, reject });
+        throw new NetworkError("No internet connection");
       });
     }
 
-    const operation = async (): Promise<ApiResponse<T>> => {
+    const operation = async () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), timeout);
+      const requestStartTime = Date.now();
 
       try {
-        const headers = {
-          ...this.getAuthHeaders(),
-          ...fetchConfig.headers,
-        };
-
         const response = await fetch(url, {
-          ...fetchConfig,
           method,
-          headers,
+          headers: {
+            "Content-Type": "application/json",
+            Accept: "application/json",
+            "X-Client-Version": config.appVersion || "1.0.0",
+            ...(this.accessToken
+              ? { Authorization: `Bearer ${this.accessToken}` }
+              : {}),
+            ...headers,
+          },
           signal: controller.signal,
+          ...fetchConfig,
         });
 
         clearTimeout(timeoutId);
 
         if (!response.ok) {
-          if (
-            response.status === 401 &&
-            this.accessToken &&
-            this.refreshToken
-          ) {
-            try {
-              await this.refreshAccessToken();
-              // Retry with new token
-              return this.request<T>(endpoint, config);
-            } catch (refreshError) {
-              this.clearTokens();
-              throw refreshError;
-            }
-          }
-
           await this.handleApiError(response);
         }
 
-        const data: ApiResponse<T> = await response.json();
+        const data = await response.json();
+        const processingTime = Date.now() - requestStartTime;
 
-        // Cache successful GET responses
-        if (enableCache && method === "GET" && data.success) {
-          this.setCache(cacheKey, data, cacheTTL);
+        // Enhance response with additional metadata
+        const enhancedResponse = {
+          ...data,
+          meta: {
+            ...data.meta,
+            processingTime,
+            requestId: response.headers.get("X-Request-ID") || undefined,
+            version: response.headers.get("X-API-Version") || undefined,
+          },
+        };
+
+        if (enableCache && method === "GET") {
+          this.setCache(cacheKey, enhancedResponse, cacheTTL);
         }
 
-        return data;
-      } catch (error: any) {
+        return enhancedResponse as ApiResponse<T>;
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.name === "AbortError") {
+            throw new ApiErrorType(
+              "TIMEOUT",
+              "Request timed out",
+              headers["X-Request-ID"]
+            );
+          }
+          throw error;
+        }
+        throw new ApiErrorType(
+          "UNKNOWN_ERROR",
+          "An unknown error occurred",
+          headers["X-Request-ID"]
+        );
+      } finally {
         clearTimeout(timeoutId);
-
-        if (error.name === "AbortError") {
-          throw new NetworkError("Request timeout");
-        }
-
-        if (error instanceof TypeError && error.message.includes("fetch")) {
-          throw new NetworkError("Network connection failed");
-        }
-
-        throw error;
       }
     };
 
@@ -363,7 +266,29 @@ export class ApiClient {
       : operation();
   }
 
-  // Convenience methods
+  private async retryWithBackoff<T>(
+    operation: () => Promise<T>,
+    retriesLeft: number,
+    baseDelay: number = 1000
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (
+        retriesLeft === 0 ||
+        error instanceof AuthenticationError ||
+        error instanceof ValidationError
+      ) {
+        throw error;
+      }
+
+      const delay = baseDelay * Math.pow(2, 3 - retriesLeft);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+
+      return this.retryWithBackoff(operation, retriesLeft - 1, baseDelay);
+    }
+  }
+
   public get<T>(
     endpoint: string,
     config?: RequestConfig
@@ -414,31 +339,54 @@ export class ApiClient {
     return this.request<T>(endpoint, { ...config, method: "DELETE" });
   }
 
-  // Health check
-  public async healthCheck(): Promise<boolean> {
-    try {
-      const response = await this.get("/health", {
-        timeout: 5000,
-        enableCache: true,
-        cacheTTL: 30000, // 30 seconds
-      });
-      return response.success;
-    } catch {
-      return false;
-    }
+  public setAccessToken(token: string) {
+    this.accessToken = token;
+    AsyncStorage.setItem("accessToken", token);
   }
 
-  // Clear cache
+  public clearAccessToken() {
+    this.accessToken = null;
+    AsyncStorage.removeItem("accessToken");
+  }
+
   public clearCache() {
     this.cache.clear();
   }
 
-  // Get cache stats
   public getCacheStats() {
     return {
       size: this.cache.size,
       keys: Array.from(this.cache.keys()),
     };
+  }
+
+  private async refreshToken(): Promise<void> {
+    if (this.isRefreshing) return;
+
+    this.isRefreshing = true;
+    try {
+      const refreshToken = await AsyncStorage.getItem("refreshToken");
+      if (!refreshToken) {
+        throw new AuthenticationError("No refresh token available");
+      }
+
+      const response = await this.post<{ accessToken: string }>(
+        "/auth/refresh",
+        { refreshToken }
+      );
+
+      this.setAccessToken(response.data.accessToken);
+    } catch (error) {
+      this.clearTokens();
+      throw error;
+    } finally {
+      this.isRefreshing = false;
+    }
+  }
+
+  public clearTokens() {
+    this.accessToken = null;
+    AsyncStorage.multiRemove(["accessToken", "refreshToken"]);
   }
 }
 

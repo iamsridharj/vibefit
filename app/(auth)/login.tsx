@@ -79,18 +79,33 @@ export default function LoginScreen() {
     dispatch(loginStart());
 
     try {
-      // Import authService at the top if not already imported
       const { authService } = await import("@/services/api/authService");
-
+      const { workoutService } = await import("@/services/api/workoutService");
       const response = await authService.login({ email, password });
 
       dispatch(
         loginSuccess({
-          user: response.user as any,
-          token: response.tokens.accessToken,
+          user: response.user,
+          token: response.token,
         })
       );
-      router.replace("/(tabs)");
+
+      try {
+        // Check if user has an active plan
+        const activePlan = await workoutService.getActivePlan();
+
+        if (activePlan?.activePlan) {
+          // User has an active plan, go to home
+          router.replace("/(tabs)");
+        } else {
+          // No active plan, go to onboarding
+          router.replace("/onboarding");
+        }
+      } catch (error) {
+        console.error("Error checking active plan:", error);
+        // If there's an error fetching the active plan, default to onboarding
+        router.replace("/onboarding");
+      }
     } catch (err: any) {
       dispatch(loginFailure(err.message || "Invalid email or password"));
       Alert.alert(

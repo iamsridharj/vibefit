@@ -1,30 +1,7 @@
+import { User as ApiUser } from "./api";
+
 // Authentication Types
-export interface User {
-  id: string;
-  email: string;
-  firstName?: string;
-  lastName?: string;
-  dateOfBirth?: string;
-  gender?: "male" | "female" | "other";
-  heightCm?: number;
-  activityLevel?:
-    | "sedentary"
-    | "lightly_active"
-    | "moderately_active"
-    | "active"
-    | "very_active";
-  primaryGoal?:
-    | "weight_loss"
-    | "muscle_building"
-    | "strength_building"
-    | "endurance"
-    | "general_fitness";
-  emailVerified: boolean;
-  appleId?: string;
-  googleId?: string;
-  createdAt: string;
-  updatedAt: string;
-}
+export type User = ApiUser;
 
 export interface UserPreferences {
   id: string;

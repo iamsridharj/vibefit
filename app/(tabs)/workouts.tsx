@@ -6,8 +6,6 @@ import {
   RefreshControl,
   TouchableOpacity,
   Text,
-  FlatList,
-  Alert,
 } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -18,474 +16,317 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Colors, spacing, typography, borderRadius } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
-import { useGetWorkoutPlansQuery, useGetExercisesQuery } from "@/store/api";
+import { PlanGeneratorModal } from "@/components/modals/PlanGeneratorModal";
+import {
+  useGetWorkoutPlansQuery,
+  useGetActivePlanQuery,
+  useGenerateWorkoutPlanMutation,
+  useCreateWorkoutSessionMutation,
+} from "@/store/api";
+import type { WorkoutPlan, ApiResponse } from "@/types/api";
 
 export default function WorkoutsScreen() {
   const colorScheme = useColorScheme();
   const colors = Colors[colorScheme ?? "light"];
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedTab, setSelectedTab] = useState<"plans" | "exercises">(
-    "plans"
-  );
+  const [showPlanGenerator, setShowPlanGenerator] = useState(false);
 
-  // API queries
   const {
-    data: workoutPlans,
+    data: plans,
     isLoading: plansLoading,
     refetch: refetchPlans,
-  } = useGetWorkoutPlansQuery();
+  } = useGetWorkoutPlansQuery() as {
+    data:
+      | ApiResponse<{
+          plans: WorkoutPlan[];
+          pagination: {
+            limit: number;
+            offset: number;
+            pages: number;
+            total: number;
+          };
+        }>
+      | undefined;
+    isLoading: boolean;
+    refetch: () => Promise<any>;
+  };
 
   const {
-    data: exercises,
-    isLoading: exercisesLoading,
-    refetch: refetchExercises,
-  } = useGetExercisesQuery({});
+    data: activePlan,
+    isLoading: activePlanLoading,
+    refetch: refetchActivePlan,
+  } = useGetActivePlanQuery() as {
+    data: ApiResponse<{ activePlan: WorkoutPlan }> | undefined;
+    isLoading: boolean;
+    refetch: () => Promise<any>;
+  };
+
+  const [generatePlan] = useGenerateWorkoutPlanMutation();
+  const [createSession] = useCreateWorkoutSessionMutation();
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchPlans(), refetchExercises()]);
+    await Promise.all([refetchPlans(), refetchActivePlan()]);
     setRefreshing(false);
-  }, [refetchPlans, refetchExercises]);
+  }, [refetchPlans, refetchActivePlan]);
 
-  const renderQuickActions = () => (
-    <View style={styles.quickActionsContainer}>
-      <Card variant="elevated" style={styles.quickActionCard}>
-        <TouchableOpacity
-          style={styles.quickAction}
-          onPress={() =>
-            Alert.alert(
-              "Coming Soon",
-              "Quick start workout feature is under development"
-            )
-          }
-        >
-          <View
-            style={[
-              styles.quickActionIcon,
-              { backgroundColor: colors.primary },
-            ]}
-          >
-            <Ionicons name="play" size={24} color={colors.textInverse} />
-          </View>
-          <View style={styles.quickActionContent}>
-            <Text style={[styles.quickActionTitle, { color: colors.text }]}>
-              Quick Start
-            </Text>
-            <Text
-              style={[
-                styles.quickActionSubtitle,
-                { color: colors.textSecondary },
-              ]}
-            >
-              Start a workout now
-            </Text>
-          </View>
-          <Ionicons
-            name="chevron-forward"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </Card>
+  const handleGeneratePlan = async (goals: string[], constraints: any) => {
+    try {
+      await generatePlan({
+        userGoals: goals,
+        constraints,
+        preferences: {
+          intensityPreference: "moderate",
+          equipmentPreference: ["bodyweight", "dumbbell", "barbell"],
+        },
+      }).unwrap();
+      refetchPlans();
+      refetchActivePlan();
+    } catch (error) {
+      console.error("Failed to generate plan:", error);
+    }
+  };
 
-      <Card variant="elevated" style={styles.quickActionCard}>
-        <TouchableOpacity
-          style={styles.quickAction}
-          onPress={() =>
-            Alert.alert(
-              "Coming Soon",
-              "Generate workout plan feature is under development"
-            )
-          }
-        >
-          <View
-            style={[
-              styles.quickActionIcon,
-              { backgroundColor: colors.secondary },
-            ]}
-          >
-            <Ionicons name="sparkles" size={24} color={colors.textInverse} />
-          </View>
-          <View style={styles.quickActionContent}>
-            <Text style={[styles.quickActionTitle, { color: colors.text }]}>
-              AI Generate Plan
-            </Text>
-            <Text
-              style={[
-                styles.quickActionSubtitle,
-                { color: colors.textSecondary },
-              ]}
-            >
-              Create personalized plan
-            </Text>
-          </View>
-          <Ionicons
-            name="chevron-forward"
-            size={20}
-            color={colors.textSecondary}
-          />
-        </TouchableOpacity>
-      </Card>
-    </View>
-  );
+  const handleStartSession = async (
+    planId: string,
+    weekNumber: number,
+    dayNumber: number
+  ) => {
+    try {
+      const session = await createSession({
+        planId,
+        weekNumber,
+        dayNumber,
+        type: "plan",
+      }).unwrap();
+      router.push(`/workout/${session.data.id}`);
+    } catch (error) {
+      console.error("Failed to start session:", error);
+    }
+  };
 
-  const renderTabSelector = () => (
-    <View
-      style={[styles.tabSelector, { backgroundColor: colors.surfaceSecondary }]}
-    >
-      <TouchableOpacity
-        style={[
-          styles.tab,
-          selectedTab === "plans" && { backgroundColor: colors.primary },
-        ]}
-        onPress={() => setSelectedTab("plans")}
-      >
-        <Text
-          style={[
-            styles.tabText,
-            {
-              color:
-                selectedTab === "plans"
-                  ? colors.textInverse
-                  : colors.textSecondary,
-            },
-          ]}
-        >
-          My Plans
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        style={[
-          styles.tab,
-          selectedTab === "exercises" && { backgroundColor: colors.primary },
-        ]}
-        onPress={() => setSelectedTab("exercises")}
-      >
-        <Text
-          style={[
-            styles.tabText,
-            {
-              color:
-                selectedTab === "exercises"
-                  ? colors.textInverse
-                  : colors.textSecondary,
-            },
-          ]}
-        >
-          Exercises
-        </Text>
-      </TouchableOpacity>
-    </View>
-  );
+  const renderActivePlan = () => {
+    if (!activePlan?.data?.activePlan) return null;
 
-  const renderWorkoutPlan = ({ item }: { item: any }) => (
-    <Card variant="elevated" style={styles.planCard}>
-      <TouchableOpacity
-        style={styles.planContent}
-        onPress={() =>
-          Alert.alert(
-            "Coming Soon",
-            "Workout plan details feature is under development"
-          )
-        }
-      >
-        <View style={styles.planHeader}>
-          <View style={styles.planInfo}>
-            <Text style={[styles.planName, { color: colors.text }]}>
-              {item.name}
+    const plan: WorkoutPlan = activePlan.data.activePlan;
+    const nextSession = plan.nextSession;
+    const progress = {
+      adherenceRate: 0,
+      completedSessions: 0,
+      totalSessions: 0,
+      currentWeek: 0,
+      currentDay: 0,
+    };
+
+    return (
+      <Card variant="elevated" style={styles.planCard}>
+        <View style={styles.cardHeader}>
+          <ThemedText type="subtitle">Active Plan</ThemedText>
+          <TouchableOpacity onPress={() => router.push(`/plan/${plan.id}`)}>
+            <Text style={[styles.seeAllText, { color: colors.primary }]}>
+              View Details
             </Text>
-            <Text
-              style={[styles.planDescription, { color: colors.textSecondary }]}
-            >
-              {item.description}
-            </Text>
-          </View>
-          {item.aiGenerated && (
-            <View style={[styles.aiTag, { backgroundColor: colors.accent }]}>
-              <Ionicons name="sparkles" size={12} color={colors.textInverse} />
-              <Text style={[styles.aiTagText, { color: colors.textInverse }]}>
-                AI
-              </Text>
-            </View>
-          )}
+          </TouchableOpacity>
         </View>
 
-        <View style={styles.planStats}>
-          <View style={styles.planStat}>
-            <Ionicons
-              name="time-outline"
-              size={16}
-              color={colors.textSecondary}
-            />
-            <Text
-              style={[styles.planStatText, { color: colors.textSecondary }]}
-            >
-              {item.durationWeeks} weeks
-            </Text>
-          </View>
-          <View style={styles.planStat}>
-            <Ionicons
-              name="barbell-outline"
-              size={16}
-              color={colors.textSecondary}
-            />
-            <Text
-              style={[styles.planStatText, { color: colors.textSecondary }]}
-            >
-              Level {item.difficultyLevel}
-            </Text>
-          </View>
-          <View style={styles.planStat}>
-            <Ionicons
-              name="trophy-outline"
-              size={16}
-              color={colors.textSecondary}
-            />
-            <Text
-              style={[styles.planStatText, { color: colors.textSecondary }]}
-            >
-              {item.goal}
-            </Text>
-          </View>
-        </View>
-      </TouchableOpacity>
-    </Card>
-  );
-
-  const renderExercise = ({ item }: { item: any }) => (
-    <Card variant="outlined" style={styles.exerciseCard}>
-      <TouchableOpacity
-        style={styles.exerciseContent}
-        onPress={() =>
-          Alert.alert(
-            "Coming Soon",
-            "Exercise details feature is under development"
-          )
-        }
-      >
-        <View style={styles.exerciseHeader}>
-          <View
-            style={[
-              styles.categoryIcon,
-              { backgroundColor: getCategoryColor(item.category) },
-            ]}
+        <View style={styles.planInfo}>
+          <Text style={[styles.planName, { color: colors.text }]}>
+            {plan.name || "Core Focus Weight Loss"}
+          </Text>
+          <Text
+            style={[styles.planDescription, { color: colors.textSecondary }]}
           >
-            <Ionicons
-              name={getCategoryIcon(item.category)}
-              size={20}
-              color={colors.textInverse}
-            />
-          </View>
-          <View style={styles.exerciseInfo}>
-            <Text style={[styles.exerciseName, { color: colors.text }]}>
-              {item.name}
-            </Text>
-            <Text
-              style={[styles.exerciseCategory, { color: colors.textSecondary }]}
-            >
-              {item.category} • {item.muscleGroups.join(", ")}
-            </Text>
-          </View>
-          <View style={styles.difficultyIndicator}>
-            {Array.from({ length: 5 }).map((_, index) => (
-              <View
-                key={index}
-                style={[
-                  styles.difficultyDot,
-                  {
-                    backgroundColor:
-                      index < item.difficultyLevel
-                        ? colors.warning
-                        : colors.border,
-                  },
-                ]}
-              />
-            ))}
-          </View>
-        </View>
+            {plan.description ||
+              "A bodyweight core-focused workout plan for intermediate users aiming for weight loss."}
+          </Text>
 
-        <View style={styles.exerciseEquipment}>
-          {item.equipmentRequired.length > 0 ? (
-            item.equipmentRequired
-              .slice(0, 3)
-              .map((equipment: string, index: number) => (
-                <View
-                  key={index}
-                  style={[
-                    styles.equipmentTag,
-                    { backgroundColor: colors.surfaceSecondary },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.equipmentText,
-                      { color: colors.textSecondary },
-                    ]}
-                  >
-                    {equipment}
-                  </Text>
-                </View>
-              ))
-          ) : (
+          <View style={styles.progressBar}>
             <View
               style={[
-                styles.equipmentTag,
-                { backgroundColor: colors.successLight },
+                styles.progressFill,
+                {
+                  backgroundColor: colors.primary,
+                  width: `${progress.adherenceRate * 100}%`,
+                },
               ]}
-            >
-              <Text style={[styles.equipmentText, { color: colors.success }]}>
-                Bodyweight
+            />
+          </View>
+
+          <View style={styles.progressStats}>
+            <View style={styles.progressStat}>
+              <Text style={[styles.progressValue, { color: colors.text }]}>
+                {progress.completedSessions}
+              </Text>
+              <Text
+                style={[styles.progressLabel, { color: colors.textSecondary }]}
+              >
+                Completed
+              </Text>
+            </View>
+
+            <View style={styles.progressStat}>
+              <Text style={[styles.progressValue, { color: colors.text }]}>
+                {progress.totalSessions}
+              </Text>
+              <Text
+                style={[styles.progressLabel, { color: colors.textSecondary }]}
+              >
+                Total
+              </Text>
+            </View>
+
+            <View style={styles.progressStat}>
+              <Text style={[styles.progressValue, { color: colors.text }]}>
+                {(progress.adherenceRate * 100).toFixed(0)}%
+              </Text>
+              <Text
+                style={[styles.progressLabel, { color: colors.textSecondary }]}
+              >
+                Adherence
+              </Text>
+            </View>
+          </View>
+
+          {nextSession ? (
+            <View style={styles.nextSession}>
+              <Text style={[styles.nextSessionTitle, { color: colors.text }]}>
+                Next Session
+              </Text>
+              <Text
+                style={[
+                  styles.nextSessionFocus,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                {nextSession.focus}
+              </Text>
+              <Button
+                variant="primary"
+                title="Start Workout"
+                onPress={() =>
+                  handleStartSession(
+                    plan.id,
+                    nextSession.weekNumber,
+                    nextSession.dayNumber
+                  )
+                }
+              />
+            </View>
+          ) : (
+            <View style={styles.nextSession}>
+              <Text style={[styles.nextSessionTitle, { color: colors.text }]}>
+                No Session Scheduled
+              </Text>
+              <Text
+                style={[
+                  styles.nextSessionFocus,
+                  { color: colors.textSecondary },
+                ]}
+              >
+                Your next workout session will be scheduled soon.
               </Text>
             </View>
           )}
         </View>
-      </TouchableOpacity>
-    </Card>
-  );
-
-  const getCategoryColor = (category: string) => {
-    switch (category) {
-      case "strength":
-        return colors.strength;
-      case "cardio":
-        return colors.cardio;
-      case "flexibility":
-        return colors.flexibility;
-      case "core":
-        return colors.core;
-      default:
-        return colors.primary;
-    }
+      </Card>
+    );
   };
 
-  const getCategoryIcon = (
-    category: string
-  ): keyof typeof Ionicons.glyphMap => {
-    switch (category) {
-      case "strength":
-        return "barbell-outline";
-      case "cardio":
-        return "heart-outline";
-      case "flexibility":
-        return "body-outline";
-      case "core":
-        return "fitness-outline";
-      default:
-        return "fitness-outline";
-    }
-  };
+  const renderPlans = () => {
+    if (!plans?.data?.plans) return null;
 
-  const renderContent = () => {
-    if (selectedTab === "plans") {
-      const plans = workoutPlans?.data || [];
-
-      if (plansLoading) {
-        return (
-          <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-              Loading workout plans...
+    return (
+      <View style={styles.plansSection}>
+        <View style={styles.sectionHeader}>
+          <ThemedText type="subtitle">Your Plans</ThemedText>
+          <TouchableOpacity onPress={() => setShowPlanGenerator(true)}>
+            <Text style={[styles.seeAllText, { color: colors.primary }]}>
+              New Plan
             </Text>
+          </TouchableOpacity>
+        </View>
+
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          <View style={styles.plansRow}>
+            {plans.data.plans.map((plan) => (
+              <TouchableOpacity
+                key={plan.id}
+                onPress={() => router.push(`/plan/${plan.id}`)}
+              >
+                <Card variant="elevated" style={styles.planPreview}>
+                  <View style={styles.planPreviewContent}>
+                    <Text style={[styles.planName, { color: colors.text }]}>
+                      {plan.name}
+                    </Text>
+                    <Text
+                      style={[
+                        styles.planDescription,
+                        { color: colors.textSecondary },
+                      ]}
+                      numberOfLines={2}
+                    >
+                      {plan.description}
+                    </Text>
+                    <View style={styles.planStats}>
+                      <View style={styles.planStat}>
+                        <Ionicons
+                          name="calendar"
+                          size={16}
+                          color={colors.textSecondary}
+                        />
+                        <Text
+                          style={[
+                            styles.planStatText,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          {plan.durationWeeks || "8"} weeks
+                        </Text>
+                      </View>
+                      <View style={styles.planStat}>
+                        <Ionicons
+                          name="time"
+                          size={16}
+                          color={colors.textSecondary}
+                        />
+                        <Text
+                          style={[
+                            styles.planStatText,
+                            { color: colors.textSecondary },
+                          ]}
+                        >
+                          {plan.planData?.plan?.timePerSession || "45"} min
+                        </Text>
+                      </View>
+                    </View>
+                  </View>
+                </Card>
+              </TouchableOpacity>
+            ))}
           </View>
-        );
-      }
-
-      if (plans.length === 0) {
-        return (
-          <View style={styles.emptyContainer}>
-            <Ionicons
-              name="fitness-outline"
-              size={64}
-              color={colors.textSecondary}
-            />
-            <ThemedText type="subtitle" style={styles.emptyTitle}>
-              No workout plans yet
-            </ThemedText>
-            <ThemedText style={styles.emptyDescription}>
-              Create your first workout plan to get started with your fitness
-              journey!
-            </ThemedText>
-            <Button
-              title="Create Plan"
-              onPress={() =>
-                Alert.alert(
-                  "Coming Soon",
-                  "Create workout plan feature is under development"
-                )
-              }
-              style={styles.createButton}
-            />
-          </View>
-        );
-      }
-
-      return (
-        <FlatList
-          data={plans}
-          renderItem={renderWorkoutPlan}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContainer}
-        />
-      );
-    } else {
-      const exerciseList = exercises?.data || [];
-
-      if (exercisesLoading) {
-        return (
-          <View style={styles.loadingContainer}>
-            <Text style={[styles.loadingText, { color: colors.textSecondary }]}>
-              Loading exercises...
-            </Text>
-          </View>
-        );
-      }
-
-      return (
-        <FlatList
-          data={exerciseList}
-          renderItem={renderExercise}
-          keyExtractor={(item) => item.id}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.listContainer}
-        />
-      );
-    }
+        </ScrollView>
+      </View>
+    );
   };
 
   return (
     <ThemedView style={styles.container}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.contentContainer}
         refreshControl={
           <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
         }
-        showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
-        <View style={styles.header}>
-          <ThemedText type="title">Workouts</ThemedText>
-          <TouchableOpacity
-            onPress={() =>
-              Alert.alert(
-                "Coming Soon",
-                "Workout history feature is under development"
-              )
-            }
-          >
-            <Ionicons name="time-outline" size={24} color={colors.text} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Quick Actions */}
-        {renderQuickActions()}
-
-        {/* Tab Selector */}
-        {renderTabSelector()}
+        {renderActivePlan()}
+        {renderPlans()}
       </ScrollView>
 
-      {/* Content */}
-      <View style={styles.contentArea}>{renderContent()}</View>
+      {showPlanGenerator && (
+        <PlanGeneratorModal
+          onClose={() => setShowPlanGenerator(false)}
+          onGenerate={handleGeneratePlan}
+        />
+      )}
     </ThemedView>
   );
 }
@@ -495,200 +336,104 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   scrollView: {
-    flex: 0,
-  },
-  contentContainer: {
-    padding: spacing.md,
-    paddingTop: spacing.lg,
-  },
-  contentArea: {
     flex: 1,
-    paddingHorizontal: spacing.md,
-  },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: spacing.lg,
-  },
-  quickActionsContainer: {
-    marginBottom: spacing.lg,
-  },
-  quickActionCard: {
-    marginBottom: spacing.sm,
-  },
-  quickAction: {
-    flexDirection: "row",
-    alignItems: "center",
-    padding: spacing.md,
-  },
-  quickActionIcon: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: spacing.md,
-  },
-  quickActionContent: {
-    flex: 1,
-  },
-  quickActionTitle: {
-    fontSize: typography.fontSizes.md,
-    fontWeight: typography.fontWeights.medium,
-    marginBottom: spacing.xs,
-  },
-  quickActionSubtitle: {
-    fontSize: typography.fontSizes.sm,
-  },
-  tabSelector: {
-    flexDirection: "row",
-    borderRadius: borderRadius.md,
-    padding: spacing.xs,
-    marginBottom: spacing.lg,
-  },
-  tab: {
-    flex: 1,
-    paddingVertical: spacing.sm,
-    alignItems: "center",
-    borderRadius: borderRadius.sm,
-  },
-  tabText: {
-    fontSize: typography.fontSizes.sm,
-    fontWeight: typography.fontWeights.medium,
-  },
-  loadingContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  loadingText: {
-    fontSize: typography.fontSizes.md,
-  },
-  emptyContainer: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    padding: spacing.xl,
-  },
-  emptyTitle: {
-    marginTop: spacing.lg,
-    marginBottom: spacing.sm,
-  },
-  emptyDescription: {
-    textAlign: "center",
-    marginBottom: spacing.xl,
-    opacity: 0.8,
-  },
-  createButton: {
-    minWidth: 200,
-  },
-  listContainer: {
-    paddingBottom: 100,
   },
   planCard: {
-    marginBottom: spacing.md,
+    margin: spacing.md,
   },
-  planContent: {
-    padding: spacing.md,
-  },
-  planHeader: {
+  cardHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: spacing.md,
+    alignItems: "center",
+    padding: spacing.md,
+  },
+  seeAllText: {
+    fontSize: typography.fontSizes.sm,
+    fontWeight: typography.fontWeights.medium,
   },
   planInfo: {
-    flex: 1,
-    marginRight: spacing.md,
+    padding: spacing.md,
   },
   planName: {
     fontSize: typography.fontSizes.lg,
-    fontWeight: typography.fontWeights.medium,
+    fontWeight: typography.fontWeights.bold,
     marginBottom: spacing.xs,
   },
   planDescription: {
     fontSize: typography.fontSizes.sm,
-    lineHeight: typography.lineHeights.relaxed * typography.fontSizes.sm,
+    marginBottom: spacing.md,
   },
-  aiTag: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
+  progressBar: {
+    height: 4,
+    backgroundColor: Colors.light.surfaceSecondary,
     borderRadius: borderRadius.sm,
+    overflow: "hidden",
+    marginBottom: spacing.md,
   },
-  aiTagText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.medium,
-    marginLeft: spacing.xs,
+  progressFill: {
+    height: "100%",
   },
-  planStats: {
+  progressStats: {
     flexDirection: "row",
-    justifyContent: "space-between",
+    justifyContent: "space-around",
+    marginBottom: spacing.md,
   },
-  planStat: {
-    flexDirection: "row",
+  progressStat: {
     alignItems: "center",
-    flex: 1,
   },
-  planStatText: {
+  progressValue: {
+    fontSize: typography.fontSizes.lg,
+    fontWeight: typography.fontWeights.bold,
+    marginBottom: spacing.xs,
+  },
+  progressLabel: {
     fontSize: typography.fontSizes.sm,
-    marginLeft: spacing.xs,
   },
-  exerciseCard: {
-    marginBottom: spacing.sm,
-  },
-  exerciseContent: {
+  nextSession: {
     padding: spacing.md,
+    backgroundColor: Colors.light.surfaceSecondary,
+    borderRadius: borderRadius.md,
   },
-  exerciseHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: spacing.sm,
-  },
-  categoryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: spacing.md,
-  },
-  exerciseInfo: {
-    flex: 1,
-  },
-  exerciseName: {
+  nextSessionTitle: {
     fontSize: typography.fontSizes.md,
     fontWeight: typography.fontWeights.medium,
     marginBottom: spacing.xs,
   },
-  exerciseCategory: {
+  nextSessionFocus: {
     fontSize: typography.fontSizes.sm,
+    marginBottom: spacing.md,
   },
-  difficultyIndicator: {
+  plansSection: {
+    margin: spacing.md,
+  },
+  sectionHeader: {
     flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: spacing.md,
   },
-  difficultyDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginLeft: spacing.xs,
-  },
-  exerciseEquipment: {
+  plansRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
+    gap: spacing.md,
+    paddingRight: spacing.md,
   },
-  equipmentTag: {
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.sm,
-    marginRight: spacing.xs,
-    marginBottom: spacing.xs,
+  planPreview: {
+    width: 240,
   },
-  equipmentText: {
-    fontSize: typography.fontSizes.xs,
-    fontWeight: typography.fontWeights.medium,
+  planPreviewContent: {
+    padding: spacing.md,
+  },
+  planStats: {
+    flexDirection: "row",
+    gap: spacing.md,
+    marginTop: spacing.md,
+  },
+  planStat: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.xs,
+  },
+  planStatText: {
+    fontSize: typography.fontSizes.sm,
   },
 });

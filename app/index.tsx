@@ -4,6 +4,7 @@ import { router } from "expo-router";
 import { View, ActivityIndicator } from "react-native";
 import { RootState } from "@/store";
 import { useThemeColor } from "@/hooks/useThemeColor";
+import { workoutService } from "@/services/api/workoutService";
 
 export default function IndexScreen() {
   const { isAuthenticated, user, loading } = useSelector(
@@ -18,18 +19,35 @@ export default function IndexScreen() {
   const primaryColor = useThemeColor({}, "primary");
 
   useEffect(() => {
-    if (!loading) {
-      if (!isAuthenticated) {
-        router.replace("/(auth)/login" as any);
-      } else if (user && !user.dateOfBirth) {
-        // User needs onboarding (simplified check)
-        router.replace("/onboarding" as any);
-      } else {
-        // User is authenticated and has completed onboarding
-        router.replace("/(tabs)");
+    const checkUserStatus = async () => {
+      if (!loading) {
+        // Step 1: Check Authentication
+        if (!isAuthenticated) {
+          router.replace("/(auth)/login" as any);
+          return;
+        }
+
+        try {
+          // Step 2: Check Active Plan
+          const activePlan = await workoutService.getActivePlan();
+
+          if (activePlan?.activePlan) {
+            // User has an active plan, go to home
+            router.replace("/(tabs)" as any);
+          } else {
+            // No active plan, go to onboarding
+            router.replace("/onboarding" as any);
+          }
+        } catch (error) {
+          console.error("Error checking active plan:", error);
+          // If there's an error fetching the active plan, default to onboarding
+          router.replace("/onboarding" as any);
+        }
       }
-    }
-  }, [isAuthenticated, user, loading]);
+    };
+
+    checkUserStatus();
+  }, [isAuthenticated, loading]);
 
   // Show loading screen while determining navigation
   return (

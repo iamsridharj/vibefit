@@ -20,9 +20,10 @@ import { Button } from "@/components/ui/Button";
 import { Colors, spacing, typography, borderRadius } from "@/constants/Colors";
 import { useColorScheme } from "@/hooks/useColorScheme";
 import {
+  useGetActivePlanQuery,
   useGetTodaysWorkoutQuery,
-  useGetProgressStatsQuery,
-  useGetInsightsQuery,
+  useGetWeeklyStatsQuery,
+  useGetSocialFeedQuery,
 } from "@/store/api";
 
 const { width } = Dimensions.get("window");
@@ -33,30 +34,41 @@ export default function HomeScreen() {
 
   // API queries
   const {
+    data: activePlan,
+    isLoading: planLoading,
+    refetch: refetchPlan,
+  } = useGetActivePlanQuery();
+
+  const {
     data: todaysWorkout,
     isLoading: workoutLoading,
     refetch: refetchWorkout,
   } = useGetTodaysWorkoutQuery();
 
   const {
-    data: progressStats,
+    data: weeklyStats,
     isLoading: statsLoading,
     refetch: refetchStats,
-  } = useGetProgressStatsQuery({ timeframe: "week" });
+  } = useGetWeeklyStatsQuery();
 
   const {
-    data: insights,
-    isLoading: insightsLoading,
-    refetch: refetchInsights,
-  } = useGetInsightsQuery({ timeframe: "week" });
+    data: socialFeed,
+    isLoading: feedLoading,
+    refetch: refetchFeed,
+  } = useGetSocialFeedQuery({ limit: 3 });
 
   const [refreshing, setRefreshing] = React.useState(false);
 
   const onRefresh = React.useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([refetchWorkout(), refetchStats(), refetchInsights()]);
+    await Promise.all([
+      refetchPlan(),
+      refetchWorkout(),
+      refetchStats(),
+      refetchFeed(),
+    ]);
     setRefreshing(false);
-  }, [refetchWorkout, refetchStats, refetchInsights]);
+  }, [refetchPlan, refetchWorkout, refetchStats, refetchFeed]);
 
   const currentHour = new Date().getHours();
   const getGreeting = () => {
@@ -67,8 +79,9 @@ export default function HomeScreen() {
 
   const renderTodaysWorkout = () => {
     const workout = todaysWorkout?.data;
+    const plan = activePlan?.data?.activePlan;
 
-    if (workoutLoading) {
+    if (workoutLoading || planLoading) {
       return (
         <Card variant="elevated" style={styles.workoutCard}>
           <View style={styles.loadingContainer}>
@@ -80,7 +93,8 @@ export default function HomeScreen() {
       );
     }
 
-    if (!workout) {
+    // No active plan at all
+    if (!plan) {
       return (
         <Card variant="elevated" style={styles.workoutCard}>
           <View style={styles.noWorkoutContainer}>
@@ -90,19 +104,14 @@ export default function HomeScreen() {
               color={colors.textSecondary}
             />
             <ThemedText type="subtitle" style={styles.noWorkoutTitle}>
-              No workout scheduled
+              No active workout plan
             </ThemedText>
             <ThemedText style={styles.noWorkoutDescription}>
               Let's create a personalized workout plan for you!
             </ThemedText>
             <Button
               title="Generate Workout Plan"
-              onPress={() =>
-                Alert.alert(
-                  "Coming Soon",
-                  "Workout plan creation feature is under development"
-                )
-              }
+              onPress={() => router.push("/workouts")}
               style={styles.generateButton}
             />
           </View>
@@ -110,15 +119,47 @@ export default function HomeScreen() {
       );
     }
 
+    // Has active plan but no workout scheduled for today
+    if (!workout || !workout.exercises) {
+      const today = new Date()
+        .toLocaleDateString("en-US", { weekday: "long" })
+        .toLowerCase();
+      return (
+        <Card variant="elevated" style={styles.workoutCard}>
+          <View style={styles.noWorkoutContainer}>
+            <Ionicons
+              name="calendar-outline"
+              size={48}
+              color={colors.textSecondary}
+            />
+            <ThemedText type="subtitle" style={styles.noWorkoutTitle}>
+              Rest Day
+            </ThemedText>
+            <ThemedText style={styles.noWorkoutDescription}>
+              No workout scheduled for today. Your next workout is on{" "}
+              {plan.nextSession?.scheduledFor
+                ? new Date(plan.nextSession.scheduledFor).toLocaleDateString(
+                    "en-US",
+                    { weekday: "long" }
+                  )
+                : "your next scheduled day"}
+              .
+            </ThemedText>
+            <Button
+              title="View Full Schedule"
+              onPress={() => router.push("/workouts")}
+              style={styles.generateButton}
+            />
+          </View>
+        </Card>
+      );
+    }
+
+    // Has workout for today
     return (
       <TouchableOpacity
         activeOpacity={0.9}
-        onPress={() =>
-          Alert.alert(
-            "Coming Soon",
-            "Workout session feature is under development"
-          )
-        }
+        onPress={() => router.push(`/workout/${workout.id}`)}
       >
         <LinearGradient
           colors={[colors.primary, colors.primaryDark]}
@@ -134,7 +175,7 @@ export default function HomeScreen() {
                 Today's Workout
               </Text>
               <Text style={[styles.workoutName, { color: colors.textInverse }]}>
-                {workout.workoutPlan?.name || "Custom Workout"}
+                {workout.type === "plan" ? plan.name : "Custom Workout"}
               </Text>
             </View>
             <View style={styles.workoutStatus}>
@@ -152,17 +193,17 @@ export default function HomeScreen() {
                 color={colors.textInverse}
               />
               <Text style={[styles.statText, { color: colors.textInverse }]}>
-                45 min
+                {workout.exercises.length * 5} min
               </Text>
             </View>
             <View style={styles.statItem}>
               <Ionicons
-                name="flash-outline"
+                name="barbell-outline"
                 size={16}
                 color={colors.textInverse}
               />
               <Text style={[styles.statText, { color: colors.textInverse }]}>
-                8 exercises
+                {workout.exercises.length} exercises
               </Text>
             </View>
             <View style={styles.statItem}>
@@ -172,7 +213,7 @@ export default function HomeScreen() {
                 color={colors.textInverse}
               />
               <Text style={[styles.statText, { color: colors.textInverse }]}>
-                Upper Body
+                {plan.schedule?.[0]?.days?.[0]?.focus || "Full Body"}
               </Text>
             </View>
           </View>
@@ -195,7 +236,14 @@ export default function HomeScreen() {
   };
 
   const renderProgressStats = () => {
-    const stats = progressStats?.data;
+    const stats = weeklyStats?.data?.weeklyStats;
+
+    if (!stats) return null;
+
+    const totalVolume = Object.values(stats.volumeByMuscleGroup).reduce(
+      (acc: number, val: number) => acc + val,
+      0
+    );
 
     return (
       <View style={styles.statsGrid}>
@@ -203,19 +251,7 @@ export default function HomeScreen() {
           <View style={styles.statHeader}>
             <Ionicons name="flame" size={24} color={colors.accent} />
             <Text style={[styles.statValue, { color: colors.text }]}>
-              {stats?.weeklyStreak || 0}
-            </Text>
-          </View>
-          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-            Day Streak
-          </Text>
-        </Card>
-
-        <Card variant="elevated" style={styles.statCard}>
-          <View style={styles.statHeader}>
-            <Ionicons name="fitness" size={24} color={colors.secondary} />
-            <Text style={[styles.statValue, { color: colors.text }]}>
-              {stats?.weeklyWorkouts || 0}
+              {stats.totalSessions || 0}
             </Text>
           </View>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
@@ -225,72 +261,77 @@ export default function HomeScreen() {
 
         <Card variant="elevated" style={styles.statCard}>
           <View style={styles.statHeader}>
-            <Ionicons name="trophy" size={24} color={colors.warning} />
+            <Ionicons name="time" size={24} color={colors.secondary} />
             <Text style={[styles.statValue, { color: colors.text }]}>
-              {stats?.totalWorkouts || 0}
+              {Math.round(stats.totalDuration / 60) || 0}h
             </Text>
           </View>
           <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
-            Total Workouts
+            Time Spent
+          </Text>
+        </Card>
+
+        <Card variant="elevated" style={styles.statCard}>
+          <View style={styles.statHeader}>
+            <Ionicons name="trophy" size={24} color={colors.warning} />
+            <Text style={[styles.statValue, { color: colors.text }]}>
+              {totalVolume}
+            </Text>
+          </View>
+          <Text style={[styles.statLabel, { color: colors.textSecondary }]}>
+            Total Volume
           </Text>
         </Card>
       </View>
     );
   };
 
-  const renderAIInsights = () => {
-    const latestInsights = insights?.data?.slice(0, 2) || [];
+  const renderSocialFeed = () => {
+    const activities = socialFeed?.data?.activities;
 
-    if (latestInsights.length === 0) {
-      return null;
-    }
+    if (!activities?.length) return null;
 
     return (
-      <View style={styles.insightsSection}>
+      <View style={styles.socialSection}>
         <View style={styles.sectionHeader}>
-          <ThemedText type="subtitle">AI Insights</ThemedText>
-          <TouchableOpacity
-            onPress={() =>
-              Alert.alert(
-                "Coming Soon",
-                "Progress insights feature is under development"
-              )
-            }
-          >
+          <ThemedText type="subtitle">Friend Activity</ThemedText>
+          <TouchableOpacity onPress={() => router.push("/social")}>
             <Text style={[styles.seeAllText, { color: colors.primary }]}>
               See All
             </Text>
           </TouchableOpacity>
         </View>
 
-        {latestInsights.map((insight) => (
-          <Card key={insight.id} variant="outlined" style={styles.insightCard}>
-            <View style={styles.insightHeader}>
-              <View
-                style={[
-                  styles.priorityIndicator,
-                  {
-                    backgroundColor:
-                      insight.priority === 1 ? colors.success : colors.warning,
-                  },
-                ]}
-              />
-              <Text style={[styles.insightTitle, { color: colors.text }]}>
-                {insight.title}
-              </Text>
+        {activities.slice(0, 2).map((activity) => (
+          <Card
+            key={activity.id}
+            variant="outlined"
+            style={styles.activityCard}
+          >
+            <View style={styles.activityHeader}>
+              <View style={styles.activityUser}>
+                <Ionicons
+                  name="person-circle"
+                  size={32}
+                  color={colors.textSecondary}
+                />
+                <View style={styles.activityMeta}>
+                  <ThemedText type="defaultSemiBold">
+                    {activity.userId}
+                  </ThemedText>
+                  <Text
+                    style={[
+                      styles.activityTime,
+                      { color: colors.textTertiary },
+                    ]}
+                  >
+                    {new Date(activity.createdAt).toLocaleDateString()}
+                  </Text>
+                </View>
+              </View>
             </View>
-            <Text
-              style={[
-                styles.insightDescription,
-                { color: colors.textSecondary },
-              ]}
-            >
-              {insight.description}
-            </Text>
-            <Text
-              style={[styles.confidenceText, { color: colors.textTertiary }]}
-            >
-              Confidence: {Math.round(insight.confidence * 100)}%
+            <Text style={[styles.activityContent, { color: colors.text }]}>
+              {activity.content.description}
             </Text>
           </Card>
         ))}
@@ -307,58 +348,41 @@ export default function HomeScreen() {
       <View style={styles.actionsGrid}>
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.surface }]}
-          onPress={() =>
-            Alert.alert(
-              "Coming Soon",
-              "Quick start workout feature is under development"
-            )
-          }
+          onPress={() => router.push("/workouts")}
         >
           <Ionicons name="play-circle" size={32} color={colors.primary} />
           <Text style={[styles.actionLabel, { color: colors.text }]}>
-            Quick Workout
+            Start Workout
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.surface }]}
-          onPress={() =>
-            Alert.alert(
-              "Coming Soon",
-              "Log metrics feature is under development"
-            )
-          }
+          onPress={() => router.push("/progress")}
         >
           <Ionicons name="scale" size={32} color={colors.secondary} />
           <Text style={[styles.actionLabel, { color: colors.text }]}>
-            Log Weight
+            Log Progress
           </Text>
         </TouchableOpacity>
 
         <TouchableOpacity
           style={[styles.actionButton, { backgroundColor: colors.surface }]}
-          onPress={() =>
-            Alert.alert("Coming Soon", "AI coach feature is under development")
-          }
-        >
-          <Ionicons name="chatbubbles" size={32} color={colors.accent} />
-          <Text style={[styles.actionLabel, { color: colors.text }]}>
-            AI Coach
-          </Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: colors.surface }]}
-          onPress={() =>
-            Alert.alert(
-              "Coming Soon",
-              "Social friends feature is under development"
-            )
-          }
+          onPress={() => router.push("/social")}
         >
           <Ionicons name="people" size={32} color={colors.info} />
           <Text style={[styles.actionLabel, { color: colors.text }]}>
             Find Friends
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.actionButton, { backgroundColor: colors.surface }]}
+          onPress={() => router.push("/explore")}
+        >
+          <Ionicons name="compass" size={32} color={colors.accent} />
+          <Text style={[styles.actionLabel, { color: colors.text }]}>
+            Explore
           </Text>
         </TouchableOpacity>
       </View>
@@ -385,19 +409,8 @@ export default function HomeScreen() {
               Ready to crush your fitness goals?
             </ThemedText>
           </View>
-          <TouchableOpacity
-            onPress={() =>
-              Alert.alert(
-                "Coming Soon",
-                "Notifications feature is under development"
-              )
-            }
-          >
-            <Ionicons
-              name="notifications-outline"
-              size={24}
-              color={colors.text}
-            />
+          <TouchableOpacity onPress={() => router.push("/profile")}>
+            <Ionicons name="person-circle" size={32} color={colors.text} />
           </TouchableOpacity>
         </View>
 
@@ -407,8 +420,8 @@ export default function HomeScreen() {
         {/* Progress Stats */}
         {renderProgressStats()}
 
-        {/* AI Insights */}
-        {renderAIInsights()}
+        {/* Social Feed */}
+        {renderSocialFeed()}
 
         {/* Quick Actions */}
         {renderQuickActions()}
@@ -426,7 +439,7 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     padding: spacing.md,
-    paddingBottom: 100, // Extra space for tab bar
+    paddingBottom: 100,
   },
   header: {
     flexDirection: "row",
@@ -507,17 +520,17 @@ const styles = StyleSheet.create({
     marginRight: spacing.lg,
   },
   statText: {
-    fontSize: typography.fontSizes.sm,
     marginLeft: spacing.xs,
+    fontSize: typography.fontSizes.sm,
   },
   workoutAction: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    padding: spacing.lg,
-    paddingTop: spacing.md,
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.2)",
+    borderTopColor: "rgba(255, 255, 255, 0.1)",
   },
   actionText: {
     fontSize: typography.fontSizes.md,
@@ -532,20 +545,22 @@ const styles = StyleSheet.create({
     flex: 1,
     marginHorizontal: spacing.xs,
     padding: spacing.md,
-    alignItems: "center",
   },
   statHeader: {
     alignItems: "center",
     marginBottom: spacing.sm,
   },
   statValue: {
-    fontSize: typography.fontSizes.xxl,
+    fontSize: typography.fontSizes.xl,
     fontWeight: typography.fontWeights.bold,
     marginTop: spacing.xs,
   },
   statLabel: {
     fontSize: typography.fontSizes.sm,
     textAlign: "center",
+  },
+  socialSection: {
+    marginBottom: spacing.lg,
   },
   sectionHeader: {
     flexDirection: "row",
@@ -557,36 +572,28 @@ const styles = StyleSheet.create({
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.medium,
   },
-  insightsSection: {
-    marginBottom: spacing.lg,
-  },
-  insightCard: {
+  activityCard: {
     marginBottom: spacing.sm,
     padding: spacing.md,
   },
-  insightHeader: {
+  activityHeader: {
     flexDirection: "row",
+    justifyContent: "space-between",
     alignItems: "center",
     marginBottom: spacing.sm,
   },
-  priorityIndicator: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    marginRight: spacing.sm,
+  activityUser: {
+    flexDirection: "row",
+    alignItems: "center",
   },
-  insightTitle: {
-    fontSize: typography.fontSizes.md,
-    fontWeight: typography.fontWeights.medium,
-    flex: 1,
+  activityMeta: {
+    marginLeft: spacing.sm,
   },
-  insightDescription: {
-    fontSize: typography.fontSizes.sm,
-    lineHeight: typography.lineHeights.relaxed * typography.fontSizes.sm,
-    marginBottom: spacing.xs,
-  },
-  confidenceText: {
+  activityTime: {
     fontSize: typography.fontSizes.xs,
+  },
+  activityContent: {
+    fontSize: typography.fontSizes.sm,
   },
   quickActions: {
     marginBottom: spacing.lg,
@@ -594,25 +601,18 @@ const styles = StyleSheet.create({
   actionsGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
+    margin: -spacing.xs,
   },
   actionButton: {
-    width: (width - spacing.md * 2 - spacing.sm) / 2,
-    aspectRatio: 1.2,
+    width: (width - spacing.md * 2 - spacing.xs * 6) / 2,
+    margin: spacing.xs,
+    padding: spacing.md,
+    borderRadius: borderRadius.md,
     alignItems: "center",
-    justifyContent: "center",
-    borderRadius: borderRadius.lg,
-    marginBottom: spacing.sm,
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
   },
   actionLabel: {
+    marginTop: spacing.sm,
     fontSize: typography.fontSizes.sm,
     fontWeight: typography.fontWeights.medium,
-    marginTop: spacing.sm,
-    textAlign: "center",
   },
 });

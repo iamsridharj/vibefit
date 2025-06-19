@@ -1,7 +1,36 @@
 {
+  "react-native.packager.port": 8081,
+  "react-native.android.runArguments.simulator": "--no-packager",
+  "react-native.ios.runArguments.simulator": "--no-packager",
+  "typescript.preferences.includePackageJsonAutoImports": "auto",
+  "typescript.suggest.autoImports": true,
+  "typescript.updateImportsOnFileMove.enabled": "always",
   "editor.codeActionsOnSave": {
-    "source.fixAll": "explicit",
-    "source.organizeImports": "explicit",
-    "source.sortMembers": "explicit"
-  }
+    "source.fixAll.eslint": "explicit",
+    "source.organizeImports": "explicit"
+  },
+  "eslint.workingDirectories": ["."],
+  "eslint.validate": [
+    "javascript",
+    "typescript",
+    "javascriptreact",
+    "typescriptreact"
+  ],
+  "emmet.includeLanguages": {
+    "typescript": "javascript",
+    "typescriptreact": "javascript"
+  },
+  "files.associations": {
+    "*.tsx": "typescriptreact",
+    "*.ts": "typescript"
+  },
+  "debug.console.acceptSuggestionOnEnter": "on",
+  "debug.console.fontSize": 14,
+  "debug.terminal.clearBeforeReusing": true,
+  "extensions.recommendations": [
+    "ms-vscode.vscode-typescript-next",
+    "bradlc.vscode-tailwindcss",
+    "ms-vscode.vscode-react-native",
+    "expo.expo-tools"
+  ]
 }

@@ -2,129 +2,63 @@ import { apiClient } from "./apiClient";
 import {
   LoginRequest,
   RegisterRequest,
-  AppleSignInRequest,
   AuthResponse,
+  AppleSignInRequest,
   User,
 } from "../../types/api";
 
 export class AuthService {
-  async register(data: RegisterRequest): Promise<AuthResponse> {
+  async login(credentials: LoginRequest): Promise<AuthResponse> {
     const response = await apiClient.post<AuthResponse>(
-      "/api/v1/auth/register",
-      data,
-      {
-        retries: 2,
-      }
+      "/auth/login",
+      credentials
     );
-
-    console.log("response", response);
-
-    if (response.success) {
-      // Store tokens
-      apiClient.setTokens(
-        response.data.tokens.accessToken,
-        response.data.tokens.refreshToken
-      );
-    }
-
+    apiClient.setAccessToken(response.data.token);
     return response.data;
   }
 
-  async login(data: LoginRequest): Promise<AuthResponse> {
-    const response = await apiClient.post<AuthResponse>(
-      "/api/v1/auth/login",
-      data,
-      {
-        retries: 2,
-      }
-    );
-
-    if (response.success) {
-      // Store tokens
-      apiClient.setTokens(
-        response.data.tokens.accessToken,
-        response.data.tokens.refreshToken
-      );
-    }
-
+  async register(data: RegisterRequest): Promise<AuthResponse> {
+    const response = await apiClient.post<AuthResponse>("/auth/register", data);
+    apiClient.setAccessToken(response.data.token);
     return response.data;
   }
 
   async appleSignIn(data: AppleSignInRequest): Promise<AuthResponse> {
-    const response = await apiClient.post<AuthResponse>(
-      "/api/v1/auth/apple",
-      data,
-      {
-        retries: 2,
-      }
-    );
-
-    if (response.success) {
-      // Store tokens
-      apiClient.setTokens(
-        response.data.tokens.accessToken,
-        response.data.tokens.refreshToken
-      );
-    }
-
+    const response = await apiClient.post<AuthResponse>("/auth/apple", data);
+    apiClient.setAccessToken(response.data.token);
     return response.data;
   }
 
-  async getCurrentUser(): Promise<User> {
-    const response = await apiClient.get<User>("/api/v1/auth/me", {
-      enableCache: true,
-      cacheTTL: 300000, // 5 minutes
-    });
+  async forgotPassword(email: string): Promise<void> {
+    await apiClient.post("/auth/forgot-password", { email });
+  }
 
-    return response.data;
+  async resetPassword(token: string, newPassword: string): Promise<void> {
+    await apiClient.post("/auth/reset-password", {
+      token,
+      newPassword,
+    });
   }
 
   async changePassword(
     currentPassword: string,
     newPassword: string
   ): Promise<void> {
-    await apiClient.post("/api/v1/auth/password/change", {
+    await apiClient.post("/auth/change-password", {
       currentPassword,
       newPassword,
     });
   }
 
-  async requestPasswordReset(email: string): Promise<void> {
-    await apiClient.post("/api/v1/auth/password/request-reset", {
-      email,
-    });
-  }
-
-  async resetPassword(token: string, newPassword: string): Promise<void> {
-    await apiClient.post("/api/v1/auth/password/reset", {
-      token,
-      newPassword,
-    });
-  }
-
-  async refreshToken(): Promise<AuthResponse> {
-    const response = await apiClient.post<AuthResponse>(
-      "/api/v1/auth/refresh",
-      {}
-    );
-
-    if (response.success) {
-      apiClient.setTokens(
-        response.data.tokens.accessToken,
-        response.data.tokens.refreshToken
-      );
-    }
-
-    return response.data;
+  async getCurrentUser(): Promise<User> {
+    const response = await apiClient.get<{ user: User }>("/auth/me");
+    return response.data.user;
   }
 
   async logout(): Promise<void> {
-    try {
-      await apiClient.post("/api/v1/auth/logout");
-    } finally {
-      // Always clear tokens, even if logout call fails
-      apiClient.clearTokens();
-    }
+    await apiClient.post("/auth/logout");
+    apiClient.clearAccessToken();
+    apiClient.clearCache();
   }
 }
 

@@ -45,45 +45,46 @@ export class SocialService {
 
   // Friend Requests
   async sendFriendRequest(
-    userId: string,
+    targetUserId: string,
     message?: string
   ): Promise<FriendRequest> {
-    const response = await apiClient.post<FriendRequest>(
-      "/api/v1/social/friends/request",
+    const response = await apiClient.post<{ connection: FriendRequest }>(
+      "/social/friends/request",
       {
-        userId,
+        targetUserId,
         message,
       }
     );
 
-    return response.data;
+    apiClient.clearCache();
+    return response.data.connection;
   }
 
   async getFriendRequests(
     type: "sent" | "received" = "received"
   ): Promise<FriendRequest[]> {
     const response = await apiClient.get<{ requests: FriendRequest[] }>(
-      `/api/v1/social/friends/requests?type=${type}`,
+      `/social/friends/request?type=${type}`,
       {
         enableCache: true,
-        cacheTTL: 60000, // 1 minute - requests need to be fresh
+        cacheTTL: 60000, // 1 minute
       }
     );
 
     return response.data.requests;
   }
 
-  async acceptFriendRequest(requestId: string): Promise<void> {
-    await apiClient.post(`/api/v1/social/friends/${requestId}/accept`);
+  async acceptFriendRequest(connectionId: string): Promise<FriendRequest> {
+    const response = await apiClient.post<{ connection: FriendRequest }>(
+      `/social/friends/request/${connectionId}/accept`
+    );
 
-    // Clear cache to refresh friend lists
     apiClient.clearCache();
+    return response.data.connection;
   }
 
-  async declineFriendRequest(requestId: string): Promise<void> {
-    await apiClient.post(`/api/v1/social/friends/${requestId}/decline`);
-
-    // Clear cache to refresh friend lists
+  async declineFriendRequest(connectionId: string): Promise<void> {
+    await apiClient.post(`/social/friends/request/${connectionId}/decline`);
     apiClient.clearCache();
   }
 
@@ -97,7 +98,7 @@ export class SocialService {
   // Friends Management
   async getFriends(): Promise<Friend[]> {
     const response = await apiClient.get<{ friends: Friend[] }>(
-      "/api/v1/social/friends",
+      "/social/friends",
       {
         enableCache: true,
         cacheTTL: 300000, // 5 minutes
@@ -108,34 +109,12 @@ export class SocialService {
   }
 
   async removeFriend(friendId: string): Promise<void> {
-    await apiClient.delete(`/api/v1/social/friends/${friendId}`);
-
-    // Clear cache to refresh friend lists
+    await apiClient.delete(`/social/friends/${friendId}`);
     apiClient.clearCache();
   }
 
-  async getFriendProfile(friendId: string): Promise<{
-    id: string;
-    firstName: string;
-    lastName: string;
-    isOnline: boolean;
-    lastActive?: string;
-    totalWorkouts: number;
-    currentStreak: number;
-    mutualFriends: number;
-    isFriend: boolean;
-  }> {
-    const response = await apiClient.get<{
-      id: string;
-      firstName: string;
-      lastName: string;
-      isOnline: boolean;
-      lastActive?: string;
-      totalWorkouts: number;
-      currentStreak: number;
-      mutualFriends: number;
-      isFriend: boolean;
-    }>(`/api/v1/social/users/${friendId}`, {
+  async getFriendProfile(friendId: string): Promise<Friend> {
+    const response = await apiClient.get<Friend>(`/social/users/${friendId}`, {
       enableCache: true,
       cacheTTL: 300000, // 5 minutes
     });
@@ -144,63 +123,67 @@ export class SocialService {
   }
 
   // Social Feed
-  async getFeed(params?: {
-    page?: number;
+  async getFeed(params: {
     limit?: number;
-  }): Promise<PaginatedResponse<SocialActivity>> {
+    offset?: number;
+    includeOwn?: boolean;
+  }): Promise<{
+    activities: SocialActivity[];
+    meta: {
+      count: number;
+      hasMore: boolean;
+    };
+  }> {
     const queryParams = new URLSearchParams();
 
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          queryParams.append(key, value.toString());
-        }
-      });
+    if (params.limit) queryParams.append("limit", params.limit.toString());
+    if (params.offset) queryParams.append("offset", params.offset.toString());
+    if (params.includeOwn !== undefined) {
+      queryParams.append("includeOwn", params.includeOwn.toString());
     }
 
-    const url = `/api/v1/social/feed${
-      queryParams.toString() ? `?${queryParams.toString()}` : ""
-    }`;
-
-    const response = await apiClient.get<PaginatedResponse<SocialActivity>>(
-      url,
-      {
-        enableCache: true,
-        cacheTTL: 120000, // 2 minutes - feed should be relatively fresh
-      }
-    );
+    const response = await apiClient.get<{
+      activities: SocialActivity[];
+      meta: {
+        count: number;
+        hasMore: boolean;
+      };
+    }>(`/social/feed?${queryParams.toString()}`, {
+      enableCache: true,
+      cacheTTL: 60000, // 1 minute
+    });
 
     return response.data;
   }
 
   async getUserActivities(
     userId: string,
-    params?: {
-      page?: number;
+    params: {
       limit?: number;
+      offset?: number;
     }
-  ): Promise<PaginatedResponse<SocialActivity>> {
+  ): Promise<{
+    activities: SocialActivity[];
+    meta: {
+      count: number;
+      hasMore: boolean;
+    };
+  }> {
     const queryParams = new URLSearchParams();
 
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          queryParams.append(key, value.toString());
-        }
-      });
-    }
+    if (params.limit) queryParams.append("limit", params.limit.toString());
+    if (params.offset) queryParams.append("offset", params.offset.toString());
 
-    const url = `/api/v1/social/users/${userId}/activities${
-      queryParams.toString() ? `?${queryParams.toString()}` : ""
-    }`;
-
-    const response = await apiClient.get<PaginatedResponse<SocialActivity>>(
-      url,
-      {
-        enableCache: true,
-        cacheTTL: 300000, // 5 minutes
-      }
-    );
+    const response = await apiClient.get<{
+      activities: SocialActivity[];
+      meta: {
+        count: number;
+        hasMore: boolean;
+      };
+    }>(`/social/users/${userId}/activities?${queryParams.toString()}`, {
+      enableCache: true,
+      cacheTTL: 60000, // 1 minute
+    });
 
     return response.data;
   }
@@ -481,14 +464,12 @@ export class SocialService {
 
   // Privacy Settings
   async updatePrivacySettings(settings: {
-    profileVisibility: "public" | "friends" | "private";
-    workoutVisibility: "public" | "friends" | "private";
-    allowFriendRequests: boolean;
-    showOnLeaderboards: boolean;
+    profileVisibility?: "public" | "friends" | "private";
+    workoutVisibility?: "public" | "friends" | "private";
+    allowFriendRequests?: boolean;
+    showOnLeaderboards?: boolean;
   }): Promise<void> {
-    await apiClient.put("/api/v1/social/privacy", settings);
-
-    // Clear cache to refresh settings
+    await apiClient.put("/social/privacy", settings);
     apiClient.clearCache();
   }
 
@@ -503,7 +484,7 @@ export class SocialService {
       workoutVisibility: "public" | "friends" | "private";
       allowFriendRequests: boolean;
       showOnLeaderboards: boolean;
-    }>("/api/v1/social/privacy", {
+    }>("/social/privacy", {
       enableCache: true,
       cacheTTL: 600000, // 10 minutes
     });

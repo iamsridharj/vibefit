@@ -12,11 +12,15 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { Button } from "@/components/ui/Button";
 import { useThemeColor } from "@/hooks/useThemeColor";
+import { useAppDispatch } from "@/store";
+import { updatePreferences } from "@/store/slices/onboardingSlice";
 
 export default function PreferencesScreen() {
   const [selectedEquipment, setSelectedEquipment] = useState<string[]>([]);
   const [workoutDays, setWorkoutDays] = useState<string[]>([]);
   const [sessionDuration, setSessionDuration] = useState<number>(30);
+
+  const dispatch = useAppDispatch();
 
   const backgroundColor = useThemeColor({}, "background");
   const textColor = useThemeColor({}, "text");
@@ -56,7 +60,16 @@ export default function PreferencesScreen() {
   };
 
   const handleContinue = () => {
-    router.push("/onboarding/complete");
+    // Save data to Redux store
+    dispatch(
+      updatePreferences({
+        selectedEquipment,
+        workoutDays,
+        sessionDuration,
+      })
+    );
+
+    router.push("/onboarding/plan-generation");
   };
 
   const handleBack = () => {
@@ -80,12 +93,12 @@ export default function PreferencesScreen() {
           <View
             style={[
               styles.progressFill,
-              { backgroundColor: primaryColor, width: "100%" },
+              { backgroundColor: primaryColor, width: "75%" },
             ]}
           />
         </View>
         <Text style={[styles.progressText, { color: textSecondaryColor }]}>
-          Step 3 of 3
+          Step 3 of 4
         </Text>
       </View>
 

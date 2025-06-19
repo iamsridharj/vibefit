@@ -1,11 +1,29 @@
 import React from "react";
-import { View, Text, StyleSheet, ScrollView, Image } from "react-native";
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Image,
+  Dimensions,
+  ColorValue,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 
 import { Button } from "@/components/ui/Button";
 import { useThemeColor } from "@/hooks/useThemeColor";
+
+const { width } = Dimensions.get("window");
+
+interface Feature {
+  icon: string;
+  title: string;
+  description: string;
+  gradient: [ColorValue, ColorValue];
+}
 
 export default function OnboardingWelcomeScreen() {
   const backgroundColor = useThemeColor({}, "background");
@@ -17,86 +35,76 @@ export default function OnboardingWelcomeScreen() {
     router.push("/onboarding/personal-info");
   };
 
-  const features = [
+  const features: Feature[] = [
     {
-      icon: "fitness-outline",
-      title: "AI-Powered Workouts",
-      description:
-        "Get personalized workout plans created by advanced AI based on your goals and fitness level.",
+      icon: "fitness",
+      title: "Smart Workouts",
+      description: "AI-powered plans that adapt to your progress",
+      gradient: ["#FF6B6B", "#FF8E8E"],
     },
     {
-      icon: "analytics-outline",
-      title: "Progress Tracking",
-      description:
-        "Monitor your fitness journey with detailed analytics and insights into your performance.",
+      icon: "trending-up",
+      title: "Track Progress",
+      description: "Monitor your fitness journey with detailed insights",
+      gradient: ["#4ECDC4", "#6EE7E7"],
     },
     {
-      icon: "people-outline",
-      title: "Social Features",
-      description:
-        "Connect with friends, share achievements, and participate in fitness challenges together.",
+      icon: "people",
+      title: "Community",
+      description: "Join a supportive fitness community",
+      gradient: ["#45B7D1", "#6CB8FF"],
     },
   ];
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor }]}>
       <ScrollView contentContainerStyle={styles.scrollContent}>
-        <View style={styles.header}>
-          <View
-            style={[styles.logoContainer, { backgroundColor: primaryColor }]}
+        {/* Hero Section */}
+        <View style={styles.hero}>
+          <LinearGradient
+            colors={[primaryColor, `${primaryColor}80`]}
+            style={styles.heroGradient}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
           >
-            <Ionicons name="fitness" size={50} color="white" />
-          </View>
-          <Text style={[styles.title, { color: textColor }]}>
-            Welcome to VibeFits
-          </Text>
-          <Text style={[styles.subtitle, { color: textSecondaryColor }]}>
-            Your personal AI fitness companion. Transform your fitness journey
-            with intelligent workouts, progress tracking, and social motivation.
-          </Text>
+            <Ionicons name="fitness" size={80} color="white" />
+            <Text style={styles.heroTitle}>VibeFit</Text>
+            <Text style={styles.heroSubtitle}>Your AI Fitness Partner</Text>
+          </LinearGradient>
         </View>
 
+        {/* Features */}
         <View style={styles.features}>
           {features.map((feature, index) => (
-            <View key={index} style={styles.featureItem}>
-              <View
-                style={[
-                  styles.featureIcon,
-                  { backgroundColor: `${primaryColor}20` },
-                ]}
-              >
-                <Ionicons
-                  name={feature.icon as any}
-                  size={32}
-                  color={primaryColor}
-                />
+            <LinearGradient
+              key={index}
+              colors={feature.gradient}
+              style={styles.featureCard}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+            >
+              <View style={styles.featureIcon}>
+                <Ionicons name={feature.icon as any} size={32} color="white" />
               </View>
               <View style={styles.featureContent}>
-                <Text style={[styles.featureTitle, { color: textColor }]}>
-                  {feature.title}
-                </Text>
-                <Text
-                  style={[
-                    styles.featureDescription,
-                    { color: textSecondaryColor },
-                  ]}
-                >
+                <Text style={styles.featureTitle}>{feature.title}</Text>
+                <Text style={styles.featureDescription}>
                   {feature.description}
                 </Text>
               </View>
-            </View>
+            </LinearGradient>
           ))}
         </View>
 
-        <View style={styles.bottom}>
+        {/* Get Started Section */}
+        <View style={styles.getStarted}>
           <Button
             title="Get Started"
             onPress={handleGetStarted}
             style={styles.getStartedButton}
           />
-
           <Text style={[styles.timeEstimate, { color: textSecondaryColor }]}>
-            Takes about 2-3 minutes to set up your profile
+            Quick 2-min setup • No credit card required
           </Text>
         </View>
       </ScrollView>
@@ -110,66 +118,65 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     flexGrow: 1,
-    padding: 24,
-    justifyContent: "space-between",
   },
-  header: {
-    alignItems: "center",
+  hero: {
+    paddingHorizontal: 24,
     paddingTop: 40,
     paddingBottom: 40,
   },
-  logoContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    justifyContent: "center",
+  heroGradient: {
+    borderRadius: 24,
+    padding: 40,
     alignItems: "center",
-    marginBottom: 24,
   },
-  title: {
-    fontSize: 32,
+  heroTitle: {
+    fontSize: 48,
     fontWeight: "bold",
-    marginBottom: 16,
-    textAlign: "center",
+    color: "white",
+    marginTop: 20,
   },
-  subtitle: {
-    fontSize: 16,
-    textAlign: "center",
-    lineHeight: 24,
-    paddingHorizontal: 20,
+  heroSubtitle: {
+    fontSize: 18,
+    color: "white",
+    opacity: 0.9,
+    marginTop: 8,
   },
   features: {
-    flex: 1,
-    paddingVertical: 32,
+    padding: 24,
+    gap: 16,
   },
-  featureItem: {
+  featureCard: {
     flexDirection: "row",
+    padding: 20,
+    borderRadius: 16,
     alignItems: "center",
-    marginBottom: 32,
-    paddingHorizontal: 8,
   },
   featureIcon: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
     justifyContent: "center",
     alignItems: "center",
-    marginRight: 20,
+    marginRight: 16,
   },
   featureContent: {
     flex: 1,
   },
   featureTitle: {
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 20,
+    fontWeight: "bold",
+    color: "white",
     marginBottom: 4,
   },
   featureDescription: {
     fontSize: 14,
-    lineHeight: 20,
+    color: "white",
+    opacity: 0.9,
   },
-  bottom: {
-    paddingTop: 20,
+  getStarted: {
+    padding: 24,
+    paddingTop: 0,
   },
   getStartedButton: {
     marginBottom: 16,

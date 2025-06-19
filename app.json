@@ -14,22 +14,29 @@
     "assetBundlePatterns": ["**/*"],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.vibefit.app"
+      "bundleIdentifier": "com.vibefit.app",
+      "jsEngine": "hermes"
     },
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
       },
-      "package": "com.vibefit.app"
+      "package": "com.vibefit.app",
+      "jsEngine": "hermes"
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiUrl": "http://localhost:3005",
-      "wsUrl": "ws://localhost:3005",
+      "apiUrl": "http://localhost:4005",
+      "wsUrl": "ws://localhost:4005",
       "environment": "development"
-    }
+    },
+    "packagerOpts": {
+      "config": "metro.config.js",
+      "https": false
+    },
+    "debuggerHost": "localhost:8081"
   }
 }

@@ -14,6 +14,16 @@ import { SafeAreaProvider } from "react-native-safe-area-context";
 import { View, ActivityIndicator } from "react-native";
 import "react-native-reanimated";
 
+// Initialize debugging in development
+if (__DEV__) {
+  import("@/utils/debugger").then(({ logger }) => {
+    logger.info("🚀 Vibefit App Started", {
+      timestamp: new Date().toISOString(),
+      platform: require("react-native").Platform.OS,
+    });
+  });
+}
+
 import { useColorScheme } from "@/hooks/useColorScheme";
 import { store, persistor } from "@/store";
 import { Colors } from "@/constants/Colors";

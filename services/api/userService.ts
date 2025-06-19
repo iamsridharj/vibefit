@@ -1,89 +1,123 @@
 import { apiClient } from "./apiClient";
-import { User, FitnessProfile } from "../../types/api";
+import { User } from "../../types/api";
 
 export class UserService {
   async getProfile(): Promise<User> {
-    const response = await apiClient.get<User>("/api/v1/users/me", {
+    const response = await apiClient.get<{ user: User }>("/users/profile", {
       enableCache: true,
       cacheTTL: 300000, // 5 minutes
     });
 
-    return response.data;
+    return response.data.user;
   }
 
-  async updateProfile(data: Partial<User>): Promise<User> {
-    const response = await apiClient.put<User>("/api/v1/users/me", data);
-
-    // Clear cache to force refresh
-    apiClient.clearCache();
-
-    return response.data;
-  }
-
-  async getFitnessProfile(): Promise<FitnessProfile> {
-    const response = await apiClient.get<FitnessProfile>(
-      "/api/v1/users/me/fitness",
-      {
-        enableCache: true,
-        cacheTTL: 300000, // 5 minutes
-      }
-    );
-
-    return response.data;
-  }
-
-  async updateFitnessProfile(
-    data: Partial<FitnessProfile>
-  ): Promise<FitnessProfile> {
-    const response = await apiClient.put<FitnessProfile>(
-      "/api/v1/users/me/fitness",
+  async updateProfile(data: {
+    firstName?: string;
+    lastName?: string;
+    dateOfBirth?: string;
+    gender?: "male" | "female" | "other" | "prefer_not_to_say";
+    fitnessGoals?: string[];
+    experienceLevel?: "beginner" | "intermediate" | "advanced";
+    preferences?: {
+      unitSystem?: "metric" | "imperial";
+      notifications?: {
+        workoutReminders?: boolean;
+        progressUpdates?: boolean;
+        socialActivity?: boolean;
+      };
+      privacySettings?: {
+        profileVisibility?: "public" | "friends" | "private";
+        activitySharing?: "public" | "friends" | "private";
+        progressSharing?: "public" | "friends" | "private";
+      };
+    };
+  }): Promise<User> {
+    const response = await apiClient.put<{ user: User }>(
+      "/users/profile",
       data
     );
 
-    // Clear cache to force refresh
     apiClient.clearCache();
-
-    return response.data;
+    return response.data.user;
   }
 
-  async deleteAccount(): Promise<void> {
-    await apiClient.delete("/api/v1/users/me");
+  async updateProfilePicture(picture: File): Promise<{ pictureUrl: string }> {
+    const formData = new FormData();
+    formData.append("picture", picture);
 
-    // Clear all local data
-    apiClient.clearTokens();
-    apiClient.clearCache();
-  }
-
-  async exportData(): Promise<{ downloadUrl: string }> {
-    const response = await apiClient.post<{ downloadUrl: string }>(
-      "/api/v1/users/me/export-data"
+    const response = await apiClient.post<{ pictureUrl: string }>(
+      "/users/profile/picture",
+      formData,
+      {
+        headers: {
+          "Content-Type": "multipart/form-data",
+        },
+      }
     );
 
+    apiClient.clearCache();
     return response.data;
   }
 
-  // Complete user onboarding
-  async completeOnboarding(data: {
-    primaryGoal: string;
-    secondaryGoals?: string[];
-    experienceLevel: string;
-    availableEquipment: string[];
-    workoutDays: string[];
-    sessionDurationMinutes: number;
-    injuriesLimitations?: string;
-    activityLevel: string;
-    dateOfBirth?: string;
-    gender?: string;
-    heightCm?: number;
-    currentWeightKg?: number;
-  }): Promise<{ user: User; fitnessProfile: FitnessProfile }> {
-    const response = await apiClient.post<{
-      user: User;
-      fitnessProfile: FitnessProfile;
-    }>("/api/v1/users/me/onboarding", data);
-
-    // Clear cache to force refresh
-    apiClient.clearCache();
+  async getStats(): Promise<{
+    workouts: {
+      total: number;
+      thisMonth: number;
+      thisWeek: number;
+      averageDuration: number;
+      streak: number;
+    };
+    progress: {
+      weightChange: {
+        lastMonth: number;
+        lastThreeMonths: number;
+      };
+      workoutIntensity: {
+        average: number;
+        trend: "up" | "down" | "stable";
+      };
+    };
+    achievements: {
+      total: number;
+      recentlyUnlocked: Array<{
+        id: string;
+        name: string;
+        description: string;
+        unlockedAt: string;
+      }>;
+    };
+  }> {
+    const response = await apiClient.get<{
+      workouts: {
+        total: number;
+        thisMonth: number;
+        thisWeek: number;
+        averageDuration: number;
+        streak: number;
+      };
+      progress: {
+        weightChange: {
+          lastMonth: number;
+          lastThreeMonths: number;
+        };
+        workoutIntensity: {
+          average: number;
+          trend: "up" | "down" | "stable";
+        };
+      };
+      achievements: {
+        total: number;
+        recentlyUnlocked: Array<{
+          id: string;
+          name: string;
+          description: string;
+          unlockedAt: string;
+        }>;
+      };
+    }>("/users/stats", {
+      enableCache: true,
+      cacheTTL: 300000, // 5 minutes
+    });
 
     return response.data;
   }

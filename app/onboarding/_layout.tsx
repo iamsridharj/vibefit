@@ -14,7 +14,19 @@ export default function OnboardingLayout() {
       <Stack.Screen name="personal-info" options={{ headerShown: false }} />
       <Stack.Screen name="fitness-profile" options={{ headerShown: false }} />
       <Stack.Screen name="preferences" options={{ headerShown: false }} />
-      <Stack.Screen name="complete" options={{ headerShown: false }} />
+      <Stack.Screen
+        name="complete"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="plan-preview"
+        options={{
+          title: "Your Workout Plan",
+          headerBackTitle: "Back",
+        }}
+      />
     </Stack>
   );
 }

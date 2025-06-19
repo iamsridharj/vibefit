@@ -6,27 +6,40 @@ import {
 } from "../../types/api";
 
 export class ExerciseService {
-  async getExercises(
-    params?: ExerciseSearchParams
-  ): Promise<PaginatedResponse<Exercise>> {
+  async getAllExercises(params: {
+    page?: number;
+    limit?: number;
+    category?: string;
+    muscleGroups?: string[];
+    equipment?: string[];
+    difficultyLevel?: number;
+    movementPattern?: string;
+  }): Promise<PaginatedResponse<Exercise>> {
     const queryParams = new URLSearchParams();
 
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          queryParams.append(key, value.toString());
-        }
-      });
+    if (params.page) queryParams.append("page", params.page.toString());
+    if (params.limit) queryParams.append("limit", params.limit.toString());
+    if (params.category) queryParams.append("category", params.category);
+    if (params.muscleGroups) {
+      queryParams.append("muscleGroups", params.muscleGroups.join(","));
+    }
+    if (params.equipment) {
+      queryParams.append("equipment", params.equipment.join(","));
+    }
+    if (params.difficultyLevel) {
+      queryParams.append("difficultyLevel", params.difficultyLevel.toString());
+    }
+    if (params.movementPattern) {
+      queryParams.append("movementPattern", params.movementPattern);
     }
 
-    const url = `/api/v1/exercises${
-      queryParams.toString() ? `?${queryParams.toString()}` : ""
-    }`;
-
-    const response = await apiClient.get<PaginatedResponse<Exercise>>(url, {
-      enableCache: true,
-      cacheTTL: 1800000, // 30 minutes - exercises don't change often
-    });
+    const response = await apiClient.get<PaginatedResponse<Exercise>>(
+      `/exercises?${queryParams.toString()}`,
+      {
+        enableCache: true,
+        cacheTTL: 300000, // 5 minutes
+      }
+    );
 
     return response.data;
   }
@@ -36,134 +49,147 @@ export class ExerciseService {
     limit: number = 10
   ): Promise<Exercise[]> {
     const response = await apiClient.get<{ exercises: Exercise[] }>(
-      `/api/v1/exercises/search?q=${encodeURIComponent(query)}&limit=${limit}`,
+      `/exercises/search?q=${encodeURIComponent(query)}&limit=${limit}`,
       {
         enableCache: true,
-        cacheTTL: 900000, // 15 minutes
+        cacheTTL: 300000, // 5 minutes
       }
     );
 
     return response.data.exercises;
   }
 
-  async getExercise(exerciseId: string): Promise<Exercise> {
-    const response = await apiClient.get<Exercise>(
-      `/api/v1/exercises/${exerciseId}`,
+  async getPopularExercises(limit: number = 10): Promise<Exercise[]> {
+    const response = await apiClient.get<{ exercises: Exercise[] }>(
+      `/exercises/popular?limit=${limit}`,
       {
         enableCache: true,
-        cacheTTL: 3600000, // 1 hour - individual exercises rarely change
+        cacheTTL: 300000, // 5 minutes
       }
     );
+
+    return response.data.exercises;
+  }
+
+  async getFilterOptions(): Promise<{
+    categories: string[];
+    muscleGroups: string[];
+    equipment: string[];
+    difficultyLevels: number[];
+    movementPatterns: string[];
+    programmingTags: string[];
+  }> {
+    const response = await apiClient.get<{
+      categories: string[];
+      muscleGroups: string[];
+      equipment: string[];
+      difficultyLevels: number[];
+      movementPatterns: string[];
+      programmingTags: string[];
+    }>("/exercises/filters", {
+      enableCache: true,
+      cacheTTL: 86400000, // 24 hours - rarely changes
+    });
 
     return response.data;
   }
 
-  async getRecommendedExercises(): Promise<Exercise[]> {
+  async getExerciseStats(): Promise<{
+    totalExercises: number;
+    byCategory: Record<string, number>;
+    byMuscleGroup: Record<string, number>;
+    byDifficulty: Record<string, number>;
+  }> {
+    const response = await apiClient.get<{
+      totalExercises: number;
+      byCategory: Record<string, number>;
+      byMuscleGroup: Record<string, number>;
+      byDifficulty: Record<string, number>;
+    }>("/exercises/stats", {
+      enableCache: true,
+      cacheTTL: 3600000, // 1 hour
+    });
+
+    return response.data;
+  }
+
+  async getExercisesByMuscleGroup(
+    muscleGroup: string,
+    limit: number = 20
+  ): Promise<Exercise[]> {
     const response = await apiClient.get<{ exercises: Exercise[] }>(
-      "/api/v1/exercises/recommended/for-me",
+      `/exercises/muscle-groups/${encodeURIComponent(
+        muscleGroup
+      )}?limit=${limit}`,
       {
         enableCache: true,
-        cacheTTL: 600000, // 10 minutes
+        cacheTTL: 300000, // 5 minutes
       }
     );
 
     return response.data.exercises;
   }
 
-  async getExercisesByMuscleGroup(muscleGroup: string): Promise<Exercise[]> {
-    const response = await this.getExercises({
-      muscle: muscleGroup,
-      limit: 50,
-    });
-
-    return response.items;
-  }
-
-  async getExercisesByEquipment(equipment: string): Promise<Exercise[]> {
-    const response = await this.getExercises({
-      equipment,
-      limit: 50,
-    });
-
-    return response.items;
-  }
-
-  async getExercisesByCategory(category: string): Promise<Exercise[]> {
-    const response = await this.getExercises({
-      category,
-      limit: 50,
-    });
-
-    return response.items;
-  }
-
-  // Get all available muscle groups
-  async getMuscleGroups(): Promise<string[]> {
-    const response = await apiClient.get<{ muscleGroups: string[] }>(
-      "/api/v1/exercises/muscle-groups",
+  async getExercisesByCategory(
+    category: string,
+    limit: number = 20
+  ): Promise<Exercise[]> {
+    const response = await apiClient.get<{ exercises: Exercise[] }>(
+      `/exercises/categories/${encodeURIComponent(category)}?limit=${limit}`,
       {
         enableCache: true,
-        cacheTTL: 86400000, // 24 hours - rarely changes
+        cacheTTL: 300000, // 5 minutes
       }
     );
 
-    return response.data.muscleGroups;
+    return response.data.exercises;
   }
 
-  // Get all available equipment types
-  async getEquipmentTypes(): Promise<string[]> {
-    const response = await apiClient.get<{ equipmentTypes: string[] }>(
-      "/api/v1/exercises/equipment-types",
+  async getRecommendedExercises(): Promise<Exercise[]> {
+    const response = await apiClient.get<{ exercises: Exercise[] }>(
+      "/exercises/recommended/for-me",
       {
         enableCache: true,
-        cacheTTL: 86400000, // 24 hours - rarely changes
+        cacheTTL: 300000, // 5 minutes
       }
     );
 
-    return response.data.equipmentTypes;
+    return response.data.exercises;
   }
 
-  // Get all available categories
-  async getCategories(): Promise<string[]> {
-    const response = await apiClient.get<{ categories: string[] }>(
-      "/api/v1/exercises/categories",
-      {
-        enableCache: true,
-        cacheTTL: 86400000, // 24 hours - rarely changes
-      }
-    );
-
-    return response.data.categories;
-  }
-
-  // Get exercises suitable for user's equipment and preferences
-  async getPersonalizedExercises(params?: {
-    muscleGroup?: string;
-    difficulty?: number;
-    excludeExercises?: string[];
-  }): Promise<Exercise[]> {
-    const queryParams = new URLSearchParams();
-
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          if (Array.isArray(value)) {
-            value.forEach((item) => queryParams.append(key, item.toString()));
-          } else {
-            queryParams.append(key, value.toString());
-          }
-        }
-      });
-    }
-
-    const url = `/api/v1/exercises/personalized${
-      queryParams.toString() ? `?${queryParams.toString()}` : ""
-    }`;
-
-    const response = await apiClient.get<{ exercises: Exercise[] }>(url, {
+  async getExerciseById(exerciseId: string): Promise<{
+    exercise: Exercise;
+    variations: Array<{
+      id: string;
+      name: string;
+      difficultyLevel: number;
+      equipment: string[];
+    }>;
+  }> {
+    const response = await apiClient.get<{
+      exercise: Exercise;
+      variations: Array<{
+        id: string;
+        name: string;
+        difficultyLevel: number;
+        equipment: string[];
+      }>;
+    }>(`/exercises/${exerciseId}`, {
       enableCache: true,
-      cacheTTL: 600000, // 10 minutes
+      cacheTTL: 300000, // 5 minutes
     });
+
+    return response.data;
+  }
+
+  async getExerciseVariations(exerciseId: string): Promise<Exercise[]> {
+    const response = await apiClient.get<{ exercises: Exercise[] }>(
+      `/exercises/${exerciseId}/variations`,
+      {
+        enableCache: true,
+        cacheTTL: 300000, // 5 minutes
+      }
+    );
 
     return response.data.exercises;
   }

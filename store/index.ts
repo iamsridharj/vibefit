@@ -19,6 +19,7 @@ import userSlice from "./slices/userSlice";
 import exerciseSlice from "./slices/exerciseSlice";
 import socialSlice from "./slices/socialSlice";
 import appSlice from "./slices/appSlice";
+import onboardingSlice from "./slices/onboardingSlice";
 
 // Dev check
 const isDev = process.env.NODE_ENV !== "production";
@@ -33,6 +34,7 @@ const persistableReducer = combineReducers({
   social: socialSlice,
   app: appSlice,
   ui: uiSlice,
+  onboarding: onboardingSlice,
 });
 
 // Persist configuration
@@ -68,7 +70,7 @@ export const store = configureStore({
   devTools: isDev,
 });
 
-// Persistor
+// Export persistor
 export const persistor = persistStore(store);
 
 // Types

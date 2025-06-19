@@ -120,11 +120,13 @@ export default function RegisterScreen() {
 
       dispatch(
         loginSuccess({
-          user: response.user as any,
-          token: response.tokens.accessToken,
+          user: response.user,
+          token: response.token,
         })
       );
-      router.replace("/onboarding" as any);
+
+      // After registration, always go to onboarding
+      router.replace("/onboarding");
     } catch (err: any) {
       dispatch(
         loginFailure(err.message || "Registration failed. Please try again.")

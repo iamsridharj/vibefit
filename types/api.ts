@@ -4,7 +4,20 @@ export interface ApiResponse<T> {
   data: T;
   meta?: {
     timestamp: string;
-    requestId?: string;
+    requestId: string;
+    version: string;
+    processingTime?: number;
+    pagination?: {
+      page: number;
+      limit: number;
+      total: number;
+      hasMore: boolean;
+    };
+    tokenUsage?: {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+    };
   };
 }
 
@@ -13,9 +26,10 @@ export interface ApiError {
   error: {
     code: string;
     message: string;
-    details?: any;
+    details?: Record<string, any>;
+    stack?: string;
+    requestId: string;
   };
-  timestamp: string;
 }
 
 export interface PaginatedResponse<T> {
@@ -39,6 +53,10 @@ export interface RegisterRequest {
   password: string;
   firstName: string;
   lastName: string;
+  dateOfBirth?: string;
+  gender?: "male" | "female" | "other" | "prefer_not_to_say";
+  fitnessGoals?: string[];
+  experienceLevel?: "beginner" | "intermediate" | "advanced";
 }
 
 export interface AppleSignInRequest {
@@ -48,257 +66,328 @@ export interface AppleSignInRequest {
   lastName?: string;
 }
 
-export interface AuthTokens {
-  accessToken: string;
-  refreshToken: string;
-  expiresIn: string;
-}
-
 export interface AuthResponse {
   user: User;
-  tokens: AuthTokens;
+  token: string;
 }
 
 // User Types
 export interface User {
   id: string;
   email: string;
-  firstName?: string;
-  lastName?: string;
+  firstName: string;
+  lastName: string;
   dateOfBirth?: string;
   gender?: "male" | "female" | "other" | "prefer_not_to_say";
-  heightCm?: number;
-  currentWeightKg?: number;
-  activityLevel?:
-    | "sedentary"
-    | "lightly_active"
-    | "moderately_active"
-    | "very_active"
-    | "extremely_active";
-  primaryGoal?:
-    | "weight_loss"
-    | "muscle_gain"
-    | "strength_training"
-    | "general_fitness"
-    | "endurance"
-    | "flexibility";
-  secondaryGoals?: string[];
-  experienceLevel?: "beginner" | "intermediate" | "advanced" | "expert";
-  availableEquipment?: string[];
-  workoutDays?: string[];
-  sessionDurationMinutes?: number;
-  injuriesLimitations?: string;
-  emailVerified: boolean;
+  fitnessGoals?: string[];
+  experienceLevel?: "beginner" | "intermediate" | "advanced";
+  profileComplete?: boolean;
+  activePlan?: boolean;
   createdAt: string;
   updatedAt: string;
-}
-
-export interface FitnessProfile {
-  activityLevel: string;
-  primaryGoal: string;
-  secondaryGoals: string[];
-  experienceLevel: string;
-  availableEquipment: string[];
-  workoutDays: string[];
-  sessionDurationMinutes: number;
-  injuriesLimitations?: string;
 }
 
 // Exercise Types
 export interface Exercise {
   id: string;
   name: string;
+  description: string;
   category: string;
   muscleGroups: string[];
-  equipmentRequired: string[];
+  equipment: string[];
   difficultyLevel: number;
-  instructions: string;
-  formTips?: string;
+  movementPattern: string;
+  instructions: string[];
+  tips: string[];
   videoUrl?: string;
   imageUrl?: string;
-  movementPattern: string;
-  programmingTags?: string[];
-  isActive: boolean;
+  variations: string[];
+  createdAt: string;
+  updatedAt: string;
 }
 
-export interface ExerciseSearchParams {
-  q?: string;
-  page?: number;
-  limit?: number;
-  category?: string;
-  muscle?: string;
-  equipment?: string;
-  difficulty?: number;
+// Workout Types
+export interface WorkoutPlanRequest {
+  userGoals: string[];
+  constraints: {
+    timePerSession: number;
+    daysPerWeek: number;
+    durationWeeks: number;
+  };
+  preferences: {
+    intensityPreference: "low" | "moderate" | "high" | "variable";
+    equipmentPreference: string[];
+    exercisePreferences?: string[];
+  };
 }
 
-// Workout Plan Types
-export interface WorkoutExercise {
-  exerciseId: string;
-  name: string;
-  sets: number;
-  reps: string;
-  weight?: number;
-  restSeconds?: number;
-  notes?: string;
+export interface GenerateWorkoutPlanRequest {
+  userGoals: string[];
+  constraints: {
+    timePerSession: number;
+    daysPerWeek: number;
+    durationWeeks: number;
+  };
+  preferences: {
+    intensityPreference: "low" | "moderate" | "high" | "variable";
+    equipmentPreference: string[];
+    exercisePreferences?: string[];
+  };
 }
 
-export interface Workout {
-  day: string;
-  name: string;
-  exercises: WorkoutExercise[];
-}
-
-export interface Week {
-  weekNumber: number;
-  workouts: Workout[];
+export interface CreateWorkoutSessionRequest {
+  planId?: string;
+  weekNumber?: number;
+  dayNumber?: number;
+  type: "plan" | "custom";
+  customExercises?: Array<{
+    exerciseId: string;
+    sets: number;
+    reps: string;
+    rest: string;
+    notes?: string;
+  }>;
 }
 
 export interface WorkoutPlan {
   id: string;
   userId: string;
   name: string;
-  description?: string;
-  durationWeeks?: number;
-  difficultyLevel?: number;
-  goal?: string;
+  description: string;
+  goal: string;
+  status: "draft" | "active" | "completed" | "archived";
+  durationWeeks: number | null;
+  difficultyLevel: string | null;
   aiGenerated: boolean;
   planData?: {
-    weeks: Week[];
+    plan: {
+      name: string;
+      description: string;
+      duration: string;
+      difficulty: string;
+      timePerSession: number;
+    };
+    weeks: Array<{
+      week: number;
+      days: Array<{
+        day: string;
+        exercises: Array<{
+          name: string;
+          sets: number;
+          reps: string;
+          rest: string;
+        }>;
+      }>;
+    }>;
+    alternatives: Record<string, string>;
+    progressionPlan: string;
   };
-  status: "draft" | "active" | "completed" | "archived";
-  startedAt?: string;
-  completedAt?: string;
+  metadata: any;
+  nextSession?: {
+    weekNumber: number;
+    dayNumber: number;
+    focus: string;
+    scheduledFor: string;
+  };
   createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+  archivedAt: string | null;
   updatedAt: string;
-}
-
-export interface GeneratePlanRequest {
-  goal: string;
-  durationWeeks: number;
-  workoutsPerWeek: number;
-  sessionDuration: number;
-  equipment: string[];
-  preferences?: {
-    focusAreas?: string[];
-    avoidExercises?: string[];
-    intensity?: string;
-  };
-}
-
-// Workout Session Types
-export interface ExerciseSet {
-  exerciseId: string;
-  setNumber: number;
-  reps?: number;
-  weight?: number;
-  duration?: number;
-  distance?: number;
-  rpe?: number;
-  notes?: string;
-  completedAt: string;
 }
 
 export interface WorkoutSession {
   id: string;
   userId: string;
   planId?: string;
-  workoutName: string;
-  status: "planned" | "in_progress" | "completed" | "cancelled";
-  startedAt?: string;
-  completedAt?: string;
-  rating?: number;
-  notes?: string;
-  fatigue?: number;
-  exercises: ExerciseSet[];
-}
-
-export interface CreateSessionRequest {
-  planId: string;
-  workoutName: string;
-  scheduledDate: string;
-  exercises: Array<{
-    exerciseId: string;
-    plannedSets: number;
-    plannedReps: string;
-  }>;
-}
-
-export interface LogSetRequest {
-  exerciseId: string;
-  setNumber: number;
-  reps: number;
-  weight: number;
+  type: "plan" | "custom";
+  status: "not_started" | "in_progress" | "completed" | "cancelled";
+  startTime?: string;
+  endTime?: string;
   duration?: number;
-  rpe?: number;
-  notes?: string;
-}
-
-export interface CompleteWorkoutRequest {
-  rating: number;
-  notes?: string;
-  fatigue?: number;
+  exercises: Array<{
+    id: string;
+    exerciseId: string;
+    name: string;
+    sets: number;
+    reps: string;
+    rest: string;
+    notes?: string;
+    order: number;
+    completed?: boolean;
+    setDetails?: Array<{
+      setNumber: number;
+      weight?: number;
+      reps: number;
+      rpe?: number;
+      completed: boolean;
+      timestamp: string;
+    }>;
+  }>;
+  metrics?: {
+    totalVolume: number;
+    totalExercises: number;
+    completedExercises: number;
+    totalSets: number;
+    completedSets: number;
+    duration: number;
+  };
 }
 
 // Progress Types
 export interface BodyMetrics {
-  weight?: number;
-  bodyFatPercentage?: number;
-  muscleMass?: number;
-  recordedAt: string;
+  id: string;
+  userId: string;
+  weightKg: number;
+  bodyFatPercentage: number;
+  muscleMassKg: number;
+  waterPercentage: number;
+  measurements: {
+    waistCm: number;
+    chestCm: number;
+    armCm: number;
+    thighCm: number;
+    neckCm: number;
+    hipCm: number;
+  };
+  measurementMethod: "scale" | "calipers" | "dexa" | "manual";
+  notes?: string;
+  createdAt: string;
 }
 
 export interface ProgressAnalytics {
-  weightProgress?: {
+  weight: {
     current: number;
-    startWeight: number;
     change: number;
-    trend: string;
-    data: Array<{ date: string; value: number }>;
+    trend: "up" | "down" | "stable";
   };
-  strengthProgress?: Record<
-    string,
-    {
+  bodyComposition: {
+    fatPercentage: {
       current: number;
-      starting: number;
-      improvement: number;
-    }
-  >;
+      change: number;
+    };
+    muscleMass: {
+      current: number;
+      change: number;
+    };
+  };
+  measurements: {
+    waist: {
+      current: number;
+      change: number;
+    };
+  };
+  trends: {
+    weightTrend: Array<{
+      date: string;
+      value: number;
+    }>;
+  };
+}
+
+export interface AIInsight {
+  id: string;
+  userId: string;
+  type: "progress" | "workout" | "nutrition" | "recovery";
+  title: string;
+  description: string;
+  recommendations: string[];
+  metrics: Record<string, any>;
+  createdAt: string;
+}
+
+export interface LLMConversation {
+  id: string;
+  userId: string;
+  type: "workout" | "nutrition" | "general";
+  messages: Array<{
+    role: "user" | "assistant";
+    content: string;
+    timestamp: string;
+  }>;
+  context?: Record<string, any>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // Social Types
-export interface SocialActivity {
-  id: string;
-  type: "workout_completed" | "milestone_achieved" | "friend_joined";
-  userId: string;
-  userName: string;
-  content: any;
-  reactions: Reaction[];
-  comments: Comment[];
-  timestamp: string;
-}
-
-export interface Reaction {
-  userId: string;
-  type: "like" | "fire" | "strong" | "clap" | "heart";
-  timestamp: string;
+export interface ActivityContent {
+  title: string;
+  description: string;
+  metadata: any;
 }
 
 export interface Comment {
   id: string;
   userId: string;
-  userName: string;
   content: string;
-  timestamp: string;
+  createdAt: string;
+}
+
+export interface WeeklyStats {
+  totalSessions: number;
+  totalDuration: number;
+  volumeByMuscleGroup: {
+    [key: string]: number;
+  };
+  sessionsPerDay: {
+    monday: number;
+    tuesday: number;
+    wednesday: number;
+    thursday: number;
+    friday: number;
+    saturday: number;
+    sunday: number;
+  };
+  comparison: {
+    sessionsChange: number;
+    volumeChange: number;
+    durationChange: number;
+  };
+}
+
+export interface TodaysWorkout {
+  id: string;
+  type: "plan" | "custom";
+  status: "not_started" | "in_progress" | "completed" | "cancelled";
+  exercises: Array<{
+    id: string;
+    exerciseId: string;
+    name: string;
+    sets: number;
+    reps: string;
+    rest: string;
+    notes: string;
+    order: number;
+  }>;
+}
+
+export interface SocialActivity {
+  id: string;
+  userId: string;
+  type:
+    | "workout_completed"
+    | "achievement_unlocked"
+    | "plan_started"
+    | "friend_joined";
+  content: ActivityContent;
+  reactions: {
+    like: number;
+    fire: number;
+    strong: number;
+  };
+  comments: Comment[];
+  createdAt: string;
 }
 
 export interface FriendRequest {
   id: string;
-  fromUserId: string;
-  toUserId: string;
-  fromUserName: string;
-  message?: string;
+  requesterId: string;
+  targetUserId: string;
   status: "pending" | "accepted" | "declined";
+  message?: string;
   createdAt: string;
+  acceptedAt?: string;
 }
 
 export interface Friend {
@@ -307,112 +396,162 @@ export interface Friend {
   lastName: string;
   isOnline: boolean;
   lastActive?: string;
-}
-
-// WebSocket Event Types
-export interface WorkoutStartEvent {
-  workoutName: string;
-  estimatedDuration: number;
-}
-
-export interface WorkoutCompleteEvent {
-  workoutName: string;
-  duration: number;
-  exercises: number;
-  rating: number;
-  notes?: string;
-}
-
-export interface SetLoggedEvent {
-  exerciseName: string;
-  reps: number;
-  weight: number;
-}
-
-export interface FriendWorkoutStartedEvent {
-  userId: string;
-  userName: string;
-  workoutName: string;
-}
-
-export interface FriendWorkoutCompletedEvent {
-  userId: string;
-  userName: string;
-  workoutData: WorkoutCompleteEvent;
-}
-
-export interface ReactionReceivedEvent {
-  activityId: string;
-  fromUserId: string;
-  fromUserName: string;
-  reactionType: string;
-  timestamp: string;
-}
-
-// Health Check Types
-export interface HealthCheckResponse {
-  status: "healthy" | "unhealthy";
-  checks: {
-    server: boolean;
-    openai: boolean;
-    database: boolean;
-    redis: boolean;
-    websocket: boolean;
-    connectedUsers: number;
-  };
-  timestamp: string;
-  uptime: number;
-  version: string;
-}
-
-// Error Types
-export class ApiErrorType extends Error {
-  constructor(public code: string, message: string, public details?: any) {
-    super(message);
-    this.name = "ApiError";
-  }
-}
-
-export class RateLimitError extends ApiErrorType {
-  constructor(message: string) {
-    super("RATE_LIMIT_EXCEEDED", message);
-    this.name = "RateLimitError";
-  }
-}
-
-export class NetworkError extends ApiErrorType {
-  constructor(message: string) {
-    super("NETWORK_ERROR", message);
-    this.name = "NetworkError";
-  }
-}
-
-export class AuthenticationError extends ApiErrorType {
-  constructor(message: string) {
-    super("AUTHENTICATION_ERROR", message);
-    this.name = "AuthenticationError";
-  }
-}
-
-export class ValidationError extends ApiErrorType {
-  constructor(message: string, details?: any) {
-    super("VALIDATION_ERROR", message, details);
-    this.name = "ValidationError";
-  }
+  totalWorkouts: number;
+  currentStreak: number;
+  mutualFriends: number;
+  isFriend: boolean;
 }
 
 // Request/Response wrapper types
 export type ApiMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
-export interface RequestConfig extends Omit<RequestInit, "cache"> {
+export interface RequestConfig {
+  method?: ApiMethod;
+  headers?: Record<string, string>;
   timeout?: number;
   retries?: number;
   enableCache?: boolean;
   cacheTTL?: number;
+  appVersion?: string;
+  body?: any;
+  signal?: AbortSignal;
 }
 
 export interface CachedResponse<T> {
   data: T;
   timestamp: number;
   ttl: number;
+}
+
+// Error Types
+export class ApiErrorType extends Error {
+  constructor(
+    public code: string,
+    message: string,
+    public requestId?: string,
+    public details?: Record<string, any>
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
+
+export class AuthenticationError extends ApiErrorType {
+  constructor(
+    message: string,
+    public isRefreshable: boolean = false,
+    requestId?: string
+  ) {
+    super("AUTHENTICATION_ERROR", message, requestId);
+    this.name = "AuthenticationError";
+  }
+}
+
+export class ValidationError extends ApiErrorType {
+  constructor(
+    message: string,
+    public validationErrors?: Record<string, any>,
+    requestId?: string
+  ) {
+    super("VALIDATION_ERROR", message, requestId, validationErrors);
+    this.name = "ValidationError";
+  }
+}
+
+export class RateLimitError extends ApiErrorType {
+  constructor(
+    message: string,
+    public retryAfterSeconds: number,
+    requestId?: string
+  ) {
+    super("RATE_LIMIT_ERROR", message, requestId, {
+      retryAfter: retryAfterSeconds,
+    });
+    this.name = "RateLimitError";
+  }
+}
+
+export class NetworkError extends ApiErrorType {
+  constructor(message: string = "Network error occurred") {
+    super("NETWORK_ERROR", message);
+    this.name = "NetworkError";
+  }
+}
+
+export class ServerError extends ApiErrorType {
+  constructor(message: string, requestId?: string) {
+    super("SERVER_ERROR", message, requestId);
+    this.name = "ServerError";
+  }
+}
+
+export interface OnboardingPlanRequest {
+  userGoals: string[];
+  constraints: {
+    timePerSession: number;
+    daysPerWeek: number;
+    durationWeeks: number;
+  };
+  preferences: {
+    intensityPreference: "low" | "moderate" | "high" | "variable";
+    equipmentPreference: string[];
+    exercisePreferences?: string[];
+  };
+}
+
+export interface OnboardingPlanResponse {
+  plan: WorkoutPlan;
+  message: string;
+  meta: {
+    timestamp: string;
+    requestId: string;
+    tokenUsage: {
+      promptTokens: number;
+      completionTokens: number;
+      totalTokens: number;
+    };
+  };
+}
+
+export interface SavePlanRequest {
+  generatedPlan: {
+    plan: {
+      name: string;
+      description: string;
+      duration: string;
+      difficulty: string;
+    };
+    weeks: Array<{
+      week: number;
+      days: Array<{
+        day: string;
+        exercises: Array<{
+          name: string;
+          sets: number;
+          reps: string;
+          rest: string;
+        }>;
+      }>;
+    }>;
+    progressionPlan: string;
+    alternatives: {
+      [exerciseName: string]: string;
+    };
+  };
+}
+
+export interface SavePlanResponse {
+  plan: WorkoutPlan;
+  message: string;
+}
+
+export interface LogSetRequest {
+  weight?: number;
+  reps: number;
+  rpe?: number;
+}
+
+export interface CompleteWorkoutRequest {
+  rating?: number;
+  feedback?: string;
 }

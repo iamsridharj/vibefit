@@ -3,64 +3,143 @@ import { BodyMetrics, ProgressAnalytics } from "../../types/api";
 
 export class ProgressService {
   async recordBodyMetrics(metrics: BodyMetrics): Promise<void> {
-    await apiClient.post("/api/v1/progress/metrics", metrics);
-
-    // Clear cache to refresh analytics
+    await apiClient.post("/progress/metrics", metrics);
     apiClient.clearCache();
   }
 
-  async getProgressAnalytics(params?: {
-    period?: number;
-    metrics?: string[];
-  }): Promise<ProgressAnalytics> {
+  async getBodyMetrics(params: {
+    startDate?: string;
+    endDate?: string;
+    limit?: number;
+    metric?: "weight" | "bodyfat" | "musclemass" | "water" | "measurements";
+  }): Promise<{
+    metrics: BodyMetrics[];
+  }> {
     const queryParams = new URLSearchParams();
 
-    if (params) {
-      if (params.period) {
-        queryParams.append("period", params.period.toString());
-      }
-      if (params.metrics) {
-        queryParams.append("metrics", params.metrics.join(","));
-      }
-    }
+    if (params.startDate) queryParams.append("startDate", params.startDate);
+    if (params.endDate) queryParams.append("endDate", params.endDate);
+    if (params.limit) queryParams.append("limit", params.limit.toString());
+    if (params.metric) queryParams.append("metric", params.metric);
 
-    const url = `/api/v1/progress/analytics${
-      queryParams.toString() ? `?${queryParams.toString()}` : ""
-    }`;
+    const response = await apiClient.get<{ metrics: BodyMetrics[] }>(
+      `/progress/metrics?${queryParams.toString()}`,
+      {
+        enableCache: true,
+        cacheTTL: 300000, // 5 minutes
+      }
+    );
 
-    const response = await apiClient.get<ProgressAnalytics>(url, {
+    return response.data;
+  }
+
+  async getProgressAnalytics(
+    timeframe: number = 90
+  ): Promise<ProgressAnalytics> {
+    const response = await apiClient.get<{ analytics: ProgressAnalytics }>(
+      `/progress/analytics?timeframe=${timeframe}`,
+      {
+        enableCache: true,
+        cacheTTL: 300000, // 5 minutes
+      }
+    );
+
+    return response.data.analytics;
+  }
+
+  async getProgressComparison(params: {
+    period1?: number;
+    period2?: number;
+  }): Promise<{
+    comparison: {
+      period1: {
+        startDate: string;
+        endDate: string;
+        metrics: {
+          weight: {
+            average: number;
+            min: number;
+            max: number;
+          };
+          bodyFat: {
+            average: number;
+            change: number;
+          };
+        };
+      };
+      period2: {
+        startDate: string;
+        endDate: string;
+        metrics: {
+          weight: {
+            average: number;
+            min: number;
+            max: number;
+          };
+          bodyFat: {
+            average: number;
+            change: number;
+          };
+        };
+      };
+      differences: {
+        weight: number;
+        bodyFat: number;
+        muscleMass: number;
+      };
+    };
+  }> {
+    const queryParams = new URLSearchParams();
+
+    if (params.period1)
+      queryParams.append("period1", params.period1.toString());
+    if (params.period2)
+      queryParams.append("period2", params.period2.toString());
+
+    const response = await apiClient.get<{
+      comparison: {
+        period1: {
+          startDate: string;
+          endDate: string;
+          metrics: {
+            weight: {
+              average: number;
+              min: number;
+              max: number;
+            };
+            bodyFat: {
+              average: number;
+              change: number;
+            };
+          };
+        };
+        period2: {
+          startDate: string;
+          endDate: string;
+          metrics: {
+            weight: {
+              average: number;
+              min: number;
+              max: number;
+            };
+            bodyFat: {
+              average: number;
+              change: number;
+            };
+          };
+        };
+        differences: {
+          weight: number;
+          bodyFat: number;
+          muscleMass: number;
+        };
+      };
+    }>(`/progress/comparison?${queryParams.toString()}`, {
       enableCache: true,
       cacheTTL: 300000, // 5 minutes
     });
 
     return response.data;
-  }
-
-  async getBodyMetrics(params?: {
-    startDate?: string;
-    endDate?: string;
-    metric?: string;
-  }): Promise<BodyMetrics[]> {
-    const queryParams = new URLSearchParams();
-
-    if (params) {
-      Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined) {
-          queryParams.append(key, value);
-        }
-      });
-    }
-
-    const url = `/api/v1/progress/metrics${
-      queryParams.toString() ? `?${queryParams.toString()}` : ""
-    }`;
-
-    const response = await apiClient.get<{ metrics: BodyMetrics[] }>(url, {
-      enableCache: true,
-      cacheTTL: 300000, // 5 minutes
-    });
-
-    return response.data.metrics;
   }
 
   async getWeightProgress(

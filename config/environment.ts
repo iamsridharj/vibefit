@@ -24,8 +24,8 @@ export interface Environment {
 
 const environments: Record<string, Environment> = {
   development: {
-    apiUrl: "http://localhost:3000",
-    websocketUrl: "ws://localhost:3000",
+    apiUrl: "http://localhost:4005",
+    websocketUrl: "ws://localhost:4005",
     enableLogging: true,
     cacheTimeouts: {
       short: 5 * 60 * 1000, // 5 minutes
